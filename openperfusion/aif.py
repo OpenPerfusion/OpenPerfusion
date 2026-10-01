@@ -162,9 +162,10 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     # not lead the tissue peak, search a wider pool for small, early, narrow (partial-volumed) arteries,
     # weighting timing over amplitude, and accept 2-voxel clusters. ----
     ttp_primary = float(fa.ttp[0])
-    weak = ((aif_raw.max() < aif_min_peak)            # no arterial amplitude
-            or (ttp_primary > ttp_tissue - 1.0)       # does not lead the tissue peak: a vein or tissue
-            or (ttp_primary < max(4.0, ttp_tissue - 15.0)))   # peaks before any bolus could: noise
+    # Only amplitude decides: on ISLES 2018 a timing-based trigger (primary peak not leading the
+    # tissue peak by >= 1 s) fired on many good AIFs and replaced them with 2-voxel picks that were
+    # worse (pooled Tmax>6 ICC fell from 0.86 to 0.78). Amplitude alone flags the 14 artery-free slabs.
+    weak = bool(aif_raw.max() < aif_min_peak) or (ttp_primary < max(4.0, ttp_tissue - 15.0))
     qc["aif_primary_weak"] = bool(weak)
     if weak:
         pool = plausible_fb & (f.width <= 12.0) & (f.peak >= max(12.0, np.percentile(pk_all, 90)))
