@@ -5,7 +5,8 @@
 
 Usage (Terminal, from any folder):
     python3 fetch_unitobrain.py --list                 # show what is in the archive and how it is packed
-    python3 fetch_unitobrain.py --extract 2            # fetch the first 2 patient folders into ./unitobrain/
+    python3 fetch_unitobrain.py --extract 2            # fetch the first 2 raw patient scans into ./unitobrain/
+    python3 fetch_unitobrain.py --extract 10 --skip 1 --kind maps   # the NLR maps of patients 2..11
     python3 fetch_unitobrain.py --extract 2 --dry-run  # say how much it would download, fetch nothing
 
 The IEEE DataPort download link is built in (DEFAULT_URL). It is a redirector that hands out a
@@ -149,14 +150,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("url", nargs="?", default=DEFAULT_URL)
     ap.add_argument("--list", action="store_true", help="list top-level folders and solid blocks")
-    ap.add_argument("--extract", type=int, default=0, metavar="N", help="extract the first N patient folders")
+    ap.add_argument("--extract", type=int, default=0, metavar="N", help="extract the first N patient folders of the chosen --kind")
+    ap.add_argument("--kind", default="raw", choices=["raw", "registered", "filtered", "maps", "any"],
+                    help="which per-patient folder: raw scan (default), _Registered, _Registered_Filtered_3mm_20HU, its _Maps, or any")
+    ap.add_argument("--skip", type=int, default=0, metavar="K", help="skip the first K folders of that kind (e.g. --skip 1 --extract 10 for patients 2..11)")
     ap.add_argument("--names", nargs="*", default=None, help="extract these top-level folder names instead")
     ap.add_argument("--out", default="unitobrain")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--grep", default=None, help="with --list: show every patient-level folder containing this text, and the distinct folder types")
     a = ap.parse_args()
 
-    url = a.url
+    url = a.url.strip()
+    if "download_url" in url:                       # the whole JSON from the redirect=0 page was pasted
+        import json as _json
+        try:
+            url = _json.loads(url)["download_url"]
+        except Exception:
+            url = url.split('"download_url":"', 1)[1].split('"', 1)[0]
+    url = url.replace("\\/", "/").replace("\\u0026", "&")   # JSON escapes, if the value was pasted raw
     if url.startswith("s3://"):
         bucket, key = url[5:].split("/", 1)
         url = f"https://{bucket}.s3.amazonaws.com/{key}"
@@ -201,7 +212,14 @@ def main():
               "so the first folders in archive order are the cheapest to fetch.")
         return
 
-    want = a.names if a.names else tops[:a.extract]
+    def kind_of(name):
+        leaf = name.split("/")[-1]
+        if leaf.endswith("_Maps"): return "maps"
+        if leaf.endswith("_Registered_Filtered_3mm_20HU"): return "filtered"
+        if leaf.endswith("_Registered"): return "registered"
+        return "raw"
+    pool_names = [t for t in tops if a.kind == "any" or kind_of(t) == a.kind]
+    want = a.names if a.names else pool_names[a.skip: a.skip + a.extract]
     targets = [e.filename for e in entries if "/".join(e.filename.split("/")[:depth]) in want and not e.is_directory]
     # cost estimate: which solid block holds each target, and how far into it
     # (py7zr maps files to folders in order; estimate = packed size of the blocks touched)
