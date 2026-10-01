@@ -22,8 +22,8 @@ class PipelineConfig:
     pvc: bool = True
     select_vof: bool = True
     # deconvolution
-    method: str = "osvd"           # bcsvd | osvd | fourier
-    lam: float = 0.15              # bcsvd truncation
+    method: str = "bcsvd"          # bcsvd | osvd | fourier  (bcsvd/0.10 validated on ISLES 2018)
+    lam: float = 0.10              # bcsvd truncation
     oi_threshold: float = 0.095    # osvd target
     pr: float = 0.15               # fourier regularisation
     # thresholds

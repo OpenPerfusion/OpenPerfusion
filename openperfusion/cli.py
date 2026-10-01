@@ -21,11 +21,11 @@ def _cfg_from_args(a) -> PipelineConfig:
 
 
 def _add_common(p):
-    p.add_argument("--method", default="osvd", choices=["bcsvd", "osvd", "fourier"])
+    p.add_argument("--method", default="bcsvd", choices=["bcsvd", "osvd", "fourier"])
     p.add_argument("--spatial-sigma", type=float, default=2.0)
     p.add_argument("--temporal-sigma", type=float, default=0.0)
     p.add_argument("--oi", type=float, default=0.095, help="oSVD oscillation-index target")
-    p.add_argument("--lam", type=float, default=0.15, help="bcSVD truncation fraction")
+    p.add_argument("--lam", type=float, default=0.10, help="bcSVD truncation fraction")
     p.add_argument("--pr", type=float, default=0.15, help="Fourier regularisation (Straka 2010)")
     p.add_argument("--reference", default="contralateral", choices=["contralateral", "global_median"])
     p.add_argument("--min-cluster-ml", type=float, default=1.0)
@@ -88,6 +88,35 @@ def cmd_isles2018(a):
     print(json.dumps(summ, indent=2, default=str))
 
 
+def cmd_dicom(a):
+    """Run the pipeline on a DICOM 4D CTP directory (vendor export), optional motion correction."""
+    from .io_dicom import read_ctp_dicom
+    from .io_isles2018 import save_nifti
+    import nibabel as nib
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    c = read_ctp_dicom(a.directory, dt=a.dt)
+    print(f"loaded {c.n_files} images: {c.hu.shape} voxel {tuple(round(v, 2) for v in c.voxel_size)} dt {c.dt}s shuttle={c.meta['shuttle_mode']}")
+    hu = c.hu
+    if a.motion:
+        from .motion import motion_correct
+        mr = motion_correct(hu, voxel_size=c.voxel_size)
+        hu = mr.hu
+        print(f"motion correction: max in-plane shift {mr.max_shift_mm:.1f} mm, max rotation {abs(mr.theta).max():.1f} deg")
+    res = run_pipeline(hu, c.dt, c.voxel_size, _cfg_from_args(a))
+    t = res.thresholds
+    aff = np.diag([c.voxel_size[0], c.voxel_size[1], c.voxel_size[2], 1.0])
+    for k in ("cbf", "cbv", "mtt", "tmax", "ttp"):
+        save_nifti(getattr(res.maps, k), aff, out / f"{k}.nii.gz")
+    save_nifti(t.core.astype(np.uint8), aff, out / "core_rcbf30.nii.gz")
+    save_nifti(t.hypo.astype(np.uint8), aff, out / "hypoperfusion_tmax6.nii.gz")
+    summary = {"core_ml": t.core_ml, "hypoperfusion_ml": t.hypo_ml, "mismatch_ml": t.mismatch_ml, "mismatch_ratio": t.mismatch_ratio,
+               "tmax_ml": t.tmax_ml, "hir": t.hir, "defuse3_target_profile": t.defuse3_target, "qc": res.qc, "dicom": c.meta}
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
+    print(json.dumps({k: v for k, v in summary.items() if k not in ("qc", "dicom")}, indent=2, default=str))
+    if res.aif.qc.get("aif_weak"):
+        print("WARNING: weak arterial input function — maps unreliable; check the AIF location")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="openperfusion", description="Open-source CT perfusion (research use only).")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -99,6 +128,10 @@ def main(argv=None):
     isl = sub.add_parser("isles2018", help="run on ISLES 2018 cases and compare with the RAPID maps")
     isl.add_argument("root"); isl.add_argument("--max-cases", type=int, default=0); isl.add_argument("--figures", action="store_true")
     _add_common(isl); isl.set_defaults(func=cmd_isles2018)
+    dc = sub.add_parser("dicom", help="run on a directory of DICOM CTP images and write NIfTI maps + summary.json")
+    dc.add_argument("directory"); dc.add_argument("--dt", type=float, default=1.0, help="uniform time grid (s)")
+    dc.add_argument("--motion", action="store_true", help="rigid in-plane motion correction before processing")
+    _add_common(dc); dc.set_defaults(func=cmd_dicom)
     a = p.parse_args(argv)
     a.func(a)
 

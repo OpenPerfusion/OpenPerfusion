@@ -19,13 +19,27 @@ The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; Open
 ## Install and run
 
 ```bash
-pip install -e .            # numpy, scipy, nibabel, scikit-image, pandas, matplotlib
-pytest tests                # 8 phantom recovery tests, ~2 s
+pip install -e .            # numpy, scipy, nibabel, scikit-image, pandas, matplotlib, pydicom
+pytest tests                # phantom recovery, DICOM round trip, motion correction (~15 s)
 
-openperfusion phantom --out results/phantom            # digital phantom → CSV, JSON, PNG
-openperfusion phantom --method fourier --noise 6
+openperfusion phantom --out results/phantom                 # digital phantom → CSV, JSON, PNG
 openperfusion isles2018 /path/to/ISLES2018/TRAINING --figures --out results/isles2018
+openperfusion dicom /path/to/ctp_dicom_dir --motion --out results/case   # vendor export → NIfTI maps + summary.json
 ```
+
+Defaults are the configuration validated against RAPID on ISLES 2018: block-circulant SVD with 10 % truncation,
+2-voxel in-plane smoothing, contralateral-hemisphere rCBF reference, 1 mL cluster filter.
+
+## Input
+
+`openperfusion dicom` reads a directory of DICOM CT images (one series, one file per slice per time point, or an
+enhanced multi-frame file), rescales to HU, assigns slices by position and frames by acquisition time, and resamples
+each slice's time series to a uniform grid (default 1 s). Shuttle / jog-mode acquisitions, where alternating table
+positions are sampled at offset, irregular times, are handled by that resampling and flagged in `summary.json`.
+`--motion` applies per-frame in-plane rigid registration (phase-correlation translation on skull-edge maps, then a
+coarse-to-fine rotation search on brain-windowed normalised cross-correlation) to the mean pre-contrast frame.
+Both are tested by writing the digital phantom out as DICOM and reading it back, and by imposing known shifts and
+rotations and recovering them (to < 0.6 voxel and < 1°).
 
 ## Digital phantom
 
@@ -63,10 +77,30 @@ Which of our thresholds best reproduces RAPID's boundary: Tmax > 6 s (Dice 0.77 
 (Dice 0.71 vs 0.59 at 35 %). The +2 s Tmax offset seen on the phantom does not appear against RAPID, i.e.
 RAPID carries the same regularisation bias, as expected for a truncated-SVD family.
 
-Failure mode: the 14 cases whose selected AIF peaks below 15 HU (thin 2–4 slice slabs with no usable artery)
-have median Tmax > 6 Dice 0.70 vs 0.88 for the rest. They are flagged (`aif.qc["aif_weak"]`). A venous or
-global fallback input function is the next fix. Full per-case numbers: `results/full94/cases_best.csv`;
-parameter sweep on the first 11 cases: `results/sweep/sweep11.csv`.
+Fallback input function: when the selected arterial curve peaks below 15 HU (thin 2–4 slice slabs that contain no
+large artery), a second search accepts small, early, narrow 2-voxel clusters (partial-volumed cortical arteries). On
+the 94 cases this lifts the worst cases (Tmax > 6 Dice 0.1–0.4 → 0.5–0.9) and the pooled Tmax > 6 ICC from 0.86 to
+0.87, mean Dice from 0.77 to 0.79, DEFUSE-3 kappa from 0.72 to 0.74, with limits of agreement unchanged. A
+timing-based trigger (primary AIF not leading the tissue peak) was tried and rejected: it replaced good AIFs in many
+cases and widened the limits of agreement to ±73 mL. Cases that still have a weak AIF are flagged
+(`aif.qc["aif_weak"]`) and `openperfusion dicom` prints a warning.
+
+## Held-out numbers (split-half, the ones to quote)
+
+`scripts/split_half.py` splits the 94 scans at random into halves A and B, scores a 12-configuration grid
+(bcSVD truncation 5 / 10 / 15 %, oSVD target 0.05; smoothing 1.5 / 2.0 / 2.5 voxels) on one half, and evaluates
+the best configuration on the other half, both ways. Both halves independently selected the same configuration
+(bcSVD 10 %, 2.0-voxel smoothing), so the held-out and in-sample numbers coincide:
+
+| held-out metric (each case scored once, by a configuration that did not see it) | result |
+|---|---|
+| Tmax > 6 s volume | ICC 0.87, bias −0.6 mL, LoA −52 to +50 mL, mean Dice 0.79, median 0.88 |
+| rCBF < 30 % core volume | ICC 0.97, bias +1.2 mL, LoA −7 to +10 mL, mean Dice 0.72, median 0.81 |
+| DEFUSE-3 target profile | agreement 0.89, kappa 0.74 |
+| voxelwise r, CBF / CBV / Tmax | 0.98 / 0.98 / 0.77 |
+| half A → test B / half B → test A | Tmax > 6 ICC 0.90 / 0.86; core ICC 0.98 / 0.97; kappa 0.73 / 0.75 |
+
+Per-case results: `results/split_half/heldout_pooled_cases.csv`; figure: `results/split_half/agreement_heldout_94.png`.
 
 ## Next steps
 
@@ -89,7 +123,9 @@ openperfusion/pipeline.py      end-to-end run + config
 openperfusion/validate.py      phantom report; reference comparison; ICC, Bland-Altman, kappa
 openperfusion/report.py        figures
 openperfusion/io_isles2018.py  ISLES 2018 loader
-openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`
+openperfusion/io_dicom.py       DICOM 4D reader (+ synthetic DICOM writer for tests)
+openperfusion/motion.py         rigid in-plane motion correction
+openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`, `openperfusion dicom`
 tests/                  phantom recovery tests
 ```
 
