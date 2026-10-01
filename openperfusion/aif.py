@@ -115,36 +115,73 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     med = ndi.median_filter(curves, size=(1, 3), mode="nearest")
     f = curve_features(med, dt)
     raw_peak = curves.max(axis=1)
-    # bolus window anchored on the whole-brain tissue curve: arteries lead tissue by a few seconds
-    t_tissue = bolus_arrival_time(curves.mean(axis=0), dt)
+    # bolus window anchored on the whole-brain tissue curve. Its time-to-peak is robust (the
+    # arrival of a noisy mean curve is not); arteries peak before tissue does.
+    mean_curve = ndi.gaussian_filter1d(curves.mean(axis=0), 1.0)
+    ttp_tissue = float(np.argmax(mean_curve) * dt)
+    t_tissue = bolus_arrival_time(mean_curve, dt)
 
     # ---- plausibility: a single clean bolus, not flicker, streak or noise ----
     cmin = med.min(axis=1)
-    plausible = ((f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= 15.0)
-                 & (f.peak >= 0.7 * raw_peak)
-                 & (f.ttp >= t_tissue - 8.0) & (f.ttp <= t_tissue + 12.0))
-    # ---- arterial candidates: tallest plausible curves (well above tissue enhancement) ----
+    shape_ok = (f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= 15.0) & (f.peak >= 0.7 * raw_peak)
+    # primary window: anchored on the tissue arrival (validated on ISLES 2018)
+    plausible = shape_ok & (f.ttp >= t_tissue - 8.0) & (f.ttp <= t_tissue + 12.0)
+    # fallback window: anchored on the tissue peak, and the pre-arrival segment must be flat
+    # (no bump above 30 % of the peak before the curve rises)
+    T_idx = np.arange(T)[None, :]
+    pre = np.where(T_idx < (f.arrival / dt)[:, None], med, 0.0).max(axis=1)
+    plausible_fb = shape_ok & (pre <= 0.3 * f.peak) & (f.ttp >= ttp_tissue - 15.0) & (f.ttp <= ttp_tissue + 1.0)
+    k1, k2, k3 = weights
+
+    def _pick(cand, min_sz):
+        cost = np.full(len(curves), -np.inf, np.float32)
+        cost[cand] = k1 * _z(f.peak[cand]) + k2 * _z(f.arrival[cand]) + k3 * _z(f.width[cand])
+        ctop = np.percentile(cost[cand], top_percentile)
+        top = cost >= ctop
+        top3d = np.zeros(mask.shape, bool); top3d[tuple(idx[top].T)] = True
+        score3d = np.full(mask.shape, -np.inf, np.float32); score3d[tuple(idx.T)] = cost
+        m = _best_cluster(top3d, score3d, min_sz)
+        m = _grow(m, conc, mask, frac=0.6)
+        return m
+
+    # ---- primary: tallest plausible curves (large arteries, well above tissue enhancement) ----
     pk = np.where(plausible, f.peak, 0)
     pk_all = f.peak
     thr = max(np.percentile(pk, candidate_percentile), 0.25 * np.percentile(pk, 99.9))
     cand = plausible & (pk >= thr)
     if cand.sum() < 2 * min_cluster:
         cand = plausible & (pk >= np.percentile(pk, candidate_percentile))
-    k1, k2, k3 = weights
-    cost = np.full(len(curves), -np.inf, np.float32)
-    cost[cand] = k1 * _z(f.peak[cand]) + k2 * _z(f.arrival[cand]) + k3 * _z(f.width[cand])
-    ctop = np.percentile(cost[cand], top_percentile)
-    top = cost >= ctop
-    top3d = np.zeros(mask.shape, bool); top3d[tuple(idx[top].T)] = True
-    score3d = np.full(mask.shape, -np.inf, np.float32); score3d[tuple(idx.T)] = cost
-    aif_mask = _best_cluster(top3d, score3d, min_cluster)
-    aif_mask = _grow(aif_mask, conc, mask, frac=0.6)
-    aif_raw = conc[aif_mask].mean(axis=0)
+    qc = {}
+    if cand.sum() >= min_cluster:
+        aif_mask = _pick(cand, min_cluster)
+        aif_raw = conc[aif_mask].mean(axis=0)
+    else:
+        aif_mask = np.zeros(mask.shape, bool); aif_raw = np.zeros(T, np.float32)
+    fa = curve_features(aif_raw[None], dt)
+    # ---- fallback: thin slabs often hold no large artery. If the primary pick is weak or does
+    # not lead the tissue peak, search a wider pool for small, early, narrow (partial-volumed) arteries,
+    # weighting timing over amplitude, and accept 2-voxel clusters. ----
+    ttp_primary = float(fa.ttp[0])
+    weak = ((aif_raw.max() < aif_min_peak)            # no arterial amplitude
+            or (ttp_primary > ttp_tissue - 1.0)       # does not lead the tissue peak: a vein or tissue
+            or (ttp_primary < max(4.0, ttp_tissue - 15.0)))   # peaks before any bolus could: noise
+    qc["aif_primary_weak"] = bool(weak)
+    if weak:
+        pool = plausible_fb & (f.width <= 12.0) & (f.peak >= max(12.0, np.percentile(pk_all, 90)))
+        if pool.sum() >= 2:
+            m2 = _pick(pool, 2)
+            a2 = conc[m2].mean(axis=0)
+            f2 = curve_features(a2[None], dt)
+            # take the fallback if it is a plausible artery: leads the tissue peak, has some amplitude
+            if float(f2.ttp[0]) <= ttp_tissue - 1.0 and a2.max() >= 12.0:
+                qc["aif_fallback"] = True
+                aif_mask, aif_raw = m2, a2
     aif_arrival = float(curve_features(aif_raw[None], dt).arrival[0])
 
     vof = vof_mask = vof_arrival = None
     k_av = 1.0
-    qc = {"n_aif_voxels": int(aif_mask.sum()), "aif_peak": float(aif_raw.max())}
+    qc.update({"n_aif_voxels": int(aif_mask.sum()), "aif_peak": float(aif_raw.max()),
+               "aif_ttp": float(curve_features(aif_raw[None], dt).ttp[0]), "tissue_ttp": ttp_tissue})
 
     if select_vof:
         # ---- venous candidates: tall, high-area, arriving after the AIF ----

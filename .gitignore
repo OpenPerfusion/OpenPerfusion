@@ -1,6 +1,7 @@
 __pycache__/
 *.egg-info/
 .pytest_cache/
-results/*/figures/
-*.nii
-*.nii.gz
+results/**/*.png
+results/full94/cases_*.csv
+results/full94_*.log
+*.log
