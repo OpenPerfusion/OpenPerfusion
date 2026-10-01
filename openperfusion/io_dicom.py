@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """4D CT perfusion from DICOM.
 
 Vendors export CTP as one or several series of 2D slices, each slice tagged with a z position

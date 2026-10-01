@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Command line: `openperfusion phantom` and `openperfusion isles2018 <root>`."""
 from __future__ import annotations
 

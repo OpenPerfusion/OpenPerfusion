@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """openperfusion — open-source CT perfusion for acute stroke.
 
 Research use only. Not a medical device. Not for clinical decision-making.

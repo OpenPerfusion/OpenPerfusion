@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Two-fold cross-validated tuning against the ISLES 2018 RAPID maps.
 
 Cases are split at random into halves A and B. The parameter grid is scored on A, the best

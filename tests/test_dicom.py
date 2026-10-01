@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """DICOM round trip: phantom -> DICOM files (uniform and shuttle-mode timing) -> loader -> pipeline."""
 import numpy as np
 import pytest

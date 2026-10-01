@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Loader for the ISLES 2018 CT perfusion challenge data (Hakim et al., Stroke 2021).
 
 Expected layout (SMIR export, re-hosted on Zenodo record 17736412):

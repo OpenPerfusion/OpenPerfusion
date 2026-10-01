@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Phantom recovery tests: the pipeline must find the input functions, recover CBV and CBF
 to within known SVD tolerances, and respond to delay one-for-one (delay-insensitivity)."""
 import numpy as np

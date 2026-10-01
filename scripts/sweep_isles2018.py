@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Parameter sweep against the ISLES 2018 RAPID maps.
 
 For each configuration, run every staged case and report agreement with RAPID for the

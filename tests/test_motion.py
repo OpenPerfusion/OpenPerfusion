@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Motion correction recovers imposed in-plane shifts and rotations on the phantom."""
 import numpy as np
 from scipy import ndimage as ndi

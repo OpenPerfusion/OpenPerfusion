@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """End-to-end: 4D HU volume -> masks -> AIF/VOF -> deconvolution -> maps -> thresholded volumes."""
 from __future__ import annotations
 

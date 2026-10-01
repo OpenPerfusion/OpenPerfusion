@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Delay-insensitive deconvolution of tissue concentration curves by the AIF.
 
 Three engines, all circular (zero-padded to 2N so arrival before the AIF wraps rather

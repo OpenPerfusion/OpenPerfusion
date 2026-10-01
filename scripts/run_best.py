@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 import sys, json, time
 from pathlib import Path
 import pandas as pd

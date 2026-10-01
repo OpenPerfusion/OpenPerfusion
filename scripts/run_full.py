@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Run the three best 11-case configurations on all staged ISLES 2018 cases."""
 import sys, json, time
 from pathlib import Path

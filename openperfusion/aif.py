@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Automatic arterial input function (AIF) and venous output function (VOF) selection.
 
 Follows the published RAPID approach (Straka, Albers, Bammer, JMRI 2010): each candidate

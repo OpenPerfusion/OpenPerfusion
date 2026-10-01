@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Masking, baseline subtraction and smoothing for 4D CT perfusion."""
 from __future__ import annotations
 

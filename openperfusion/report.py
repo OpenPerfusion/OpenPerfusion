@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Figures for the phantom and for reference-software comparisons."""
 from __future__ import annotations
 

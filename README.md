@@ -19,7 +19,8 @@ The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; Open
 ## Install and run
 
 ```bash
-pip install -e .            # numpy, scipy, nibabel, scikit-image, pandas, matplotlib, pydicom
+git clone https://github.com/OpenPerfusion/OpenPerfusion.git && cd OpenPerfusion
+pip install -e ".[dicom,dev]"   # numpy, scipy, nibabel, scikit-image, pydicom, pytest (pandas, matplotlib for the scripts)
 pytest tests                # phantom recovery, DICOM round trip, motion correction (~15 s)
 
 openperfusion phantom --out results/phantom                 # digital phantom → CSV, JSON, PNG
@@ -128,6 +129,17 @@ openperfusion/motion.py         rigid in-plane motion correction
 openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`, `openperfusion dicom`
 tests/                  phantom recovery tests
 ```
+
+## Citing and contributing
+
+If you use OpenPerfusion in research, cite it via the `CITATION.cff` in this repository (GitHub's
+"Cite this repository" button renders it). The methods it implements are Wu et al. (MRM 2003) for the
+block-circulant deconvolution, Straka et al. (JMRI 2010) for the AIF/VOF cost function and Fourier
+engine, and Hakim et al. (Stroke 2021) for the ISLES 2018 dataset; please cite those too.
+
+Contributions are welcome; see `CONTRIBUTING.md`. The most useful thing right now is an anonymised
+real CTP DICOM export per scanner vendor, and reports of cases where OpenPerfusion and a commercial
+package disagree. Never attach patient data to an issue.
 
 ## Licence
 

@@ -1,0 +1,96 @@
+cff-version: 1.2.0
+message: "If you use OpenPerfusion in research, please cite it as below."
+title: "OpenPerfusion: open-source CT perfusion processing for acute stroke"
+type: software
+version: 0.1.0
+date-released: 2026-10-01
+license: Apache-2.0
+repository-code: "https://github.com/OpenPerfusion/OpenPerfusion"
+url: "https://github.com/OpenPerfusion/OpenPerfusion"
+authors:
+  - family-names: Scott
+    given-names: Will
+    affiliation: "Division of Neurology, University Health Network, University of Toronto"
+keywords:
+  - CT perfusion
+  - acute ischemic stroke
+  - deconvolution
+  - Tmax
+  - ischemic core
+  - RAPID
+  - ISLES 2018
+abstract: >-
+  An open-source, delay-insensitive CT perfusion pipeline (block-circulant SVD /
+  oSVD / Fourier-Wiener deconvolution, automatic AIF/VOF selection, rCBF < 30 %
+  core and Tmax > 6 s hypoperfusion volumes, mismatch and DEFUSE-3 target
+  profile) validated against RAPID output on the 94 ISLES 2018 training scans.
+  Research use only; not a medical device.
+references:
+  - type: article
+    title: "Tracer arrival timing-insensitive technique for estimating flow in MR perfusion-weighted imaging using singular value decomposition with a block-circulant deconvolution matrix"
+    authors:
+      - family-names: Wu
+        given-names: Ona
+      - family-names: Østergaard
+        given-names: Leif
+      - family-names: Weisskoff
+        given-names: Robert M.
+      - family-names: Benner
+        given-names: Thomas
+      - family-names: Rosen
+        given-names: Bruce R.
+      - family-names: Sorensen
+        given-names: A. Gregory
+    journal: Magnetic Resonance in Medicine
+    volume: 50
+    issue: 1
+    start: 164
+    end: 174
+    year: 2003
+    doi: 10.1002/mrm.10522
+  - type: article
+    title: "Real-time diffusion-perfusion mismatch analysis in acute stroke"
+    authors:
+      - family-names: Straka
+        given-names: Matus
+      - family-names: Albers
+        given-names: Gregory W.
+      - family-names: Bammer
+        given-names: Roland
+    journal: Journal of Magnetic Resonance Imaging
+    volume: 32
+    issue: 5
+    start: 1024
+    end: 1037
+    year: 2010
+    doi: 10.1002/jmri.22338
+  - type: article
+    title: "Predicting infarct core from computed tomography perfusion in acute ischemia with machine learning: lessons from the ISLES Challenge"
+    authors:
+      - family-names: Hakim
+        given-names: Arsany
+      - family-names: Christensen
+        given-names: Søren
+      - family-names: Winzeck
+        given-names: Stefan
+      - family-names: Lansberg
+        given-names: Maarten G.
+      - family-names: Parsons
+        given-names: Mark W.
+      - family-names: Lucas
+        given-names: Christian
+      - family-names: Robben
+        given-names: David
+      - family-names: Wiest
+        given-names: Roland
+      - family-names: Reyes
+        given-names: Mauricio
+      - family-names: Zaharchuk
+        given-names: Greg
+    journal: Stroke
+    volume: 52
+    issue: 7
+    start: 2328
+    end: 2337
+    year: 2021
+    doi: 10.1161/STROKEAHA.120.030696

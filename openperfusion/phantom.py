@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Digital CT perfusion phantom with known ground truth.
 
 Modelled on the ASIST-Japan / Kudo (Radiology 2013) digital phantom: a grid of tissue

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 OpenPerfusion contributors
 """Rigid in-plane motion correction for 4D CT perfusion.
 
 Head motion during a 45–60 s CTP acquisition is mostly in-plane (translation plus a small
