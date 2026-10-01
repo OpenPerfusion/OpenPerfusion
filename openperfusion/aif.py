@@ -25,12 +25,19 @@ class CurveFeatures:
     auc: np.ndarray        # concentration * s
 
 
-def curve_features(curves: np.ndarray, dt: float, frac: float = 0.2) -> CurveFeatures:
-    """Vectorised features for an (N, T) array of curves."""
+def curve_features(curves: np.ndarray, dt: float, frac: float = 0.2, arrival_floor=0.0) -> CurveFeatures:
+    """Vectorised features for an (N, T) array of curves.
+
+    `arrival_floor` (HU, scalar or one value per curve): the arrival threshold is
+    max(frac * peak, arrival_floor). On high-resolution, noisy data (512 x 512 at 80 kVp) a 50 HU
+    curve crosses 20 % of its peak inside the noise, which makes weak voxels look like the
+    earliest-arriving ones; a floor of a few standard deviations of that curve's own baseline noise
+    removes that. A curve whose peak is below its floor gets arrival = time to peak.
+    """
     c = np.asarray(curves, np.float32)
     peak = c.max(axis=1)
     ipk = c.argmax(axis=1)
-    thr = (frac * peak)[:, None]
+    thr = np.maximum(frac * peak, np.asarray(arrival_floor, np.float32))[:, None]
     # arrival = last sample at or below `frac` of the peak BEFORE the peak, plus one.
     # Searching backwards from the peak makes this robust to early noise spikes.
     T = c.shape[1]
@@ -59,8 +66,16 @@ def _z(x: np.ndarray) -> np.ndarray:
     return (x - x.mean()) / s if s > 0 else np.zeros_like(x)
 
 
-def _best_cluster(mask3d: np.ndarray, score3d: np.ndarray, min_size: int) -> np.ndarray:
-    """Connected component (26-conn) of `mask3d` with the highest mean score and >= min_size voxels."""
+def _best_cluster(mask3d: np.ndarray, score3d: np.ndarray, min_size: int, peak3d: np.ndarray | None = None,
+                  core_frac: float = 0.5) -> np.ndarray:
+    """Connected component (26-conn) of `mask3d` with the highest mean score and >= min_size voxels.
+
+    When `peak3d` is given, each component is first trimmed to its bright core (voxels whose peak is
+    at least `core_frac` of the component's 95th-percentile peak) and scored on that core. At 0.5 mm
+    in-plane resolution the top-cost voxels of a large artery form one component together with
+    hundreds of partial-volume voxels along the vessel wall, and scoring the whole component lets a
+    small, homogeneous cluster of noise win; scoring the core does not.
+    """
     lab, n = ndi.label(mask3d, structure=np.ones((3, 3, 3)))
     if n == 0:
         return mask3d
@@ -70,6 +85,10 @@ def _best_cluster(mask3d: np.ndarray, score3d: np.ndarray, min_size: int) -> np.
         sz = int(comp.sum())
         if sz < min_size:
             continue
+        if peak3d is not None:
+            core = comp & (peak3d >= core_frac * np.percentile(peak3d[comp], 95))
+            if core.sum() >= min_size:
+                comp = core
         s = float(score3d[comp].mean())
         if s > best_score:
             best, best_score = comp, s
@@ -85,7 +104,7 @@ def _grow(seed: np.ndarray, conc: np.ndarray, mask: np.ndarray, frac: float = 0.
     se = np.zeros((3, 3, 3), bool); se[:, :, 1] = True
     grown = seed.copy()
     for _ in range(iters):
-        grown = ndi.binary_dilation(grown, structure=se) & ok
+        grown = (ndi.binary_dilation(grown, structure=se) & ok) | seed
     return grown
 
 
@@ -107,15 +126,28 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
                    min_cluster: int = 3, weights=(1.0, -3.5, -1.0),
                    select_vof: bool = True, pvc: bool = True,
                    vof_min_transit: float = 2.0, truncation_frac: float = 0.3,
-                   pvc_max: float = 2.5, aif_min_peak: float = 15.0) -> AifResult:
-    """Select AIF (and VOF) from a (X,Y,Z,T) concentration array within `mask`."""
+                   pvc_max: float = 2.5, aif_min_peak: float = 15.0, arrival_noise_k: float = 4.0,
+                   aif_lead: float = 2.0) -> AifResult:
+    """Select AIF (and VOF) from a (X,Y,Z,T) concentration array within `mask`.
+
+    `arrival_noise_k`: each voxel's arrival threshold is at least this many standard deviations of
+    its own pre-bolus noise (measured on the median-filtered curve), so that arrival times of weak,
+    noisy curves are not read inside the noise. 0 disables it.
+    `aif_lead` (s): an AIF candidate must peak at least this long before the whole-brain tissue curve
+    peaks; curves peaking with or after the tissue are venous or dispersed.
+    """
     X, Y, Z, T = conc.shape
     idx = np.argwhere(mask)
     curves = conc[mask]                       # (N, T)
     # features on a 3-frame median-filtered copy: a one- or two-frame spike (motion, streak,
     # table-toggle flicker) must not be mistaken for a bolus
     med = ndi.median_filter(curves, size=(1, 3), mode="nearest")
-    f = curve_features(med, dt)
+    # per-voxel pre-bolus noise: frames before the whole-brain bolus arrival (at least 3)
+    mean0 = ndi.gaussian_filter1d(curves.mean(axis=0), 1.0)
+    n_pre = max(3, int(bolus_arrival_time(mean0, dt) / dt))
+    noise = med[:, :n_pre].std(axis=1)
+    f = curve_features(med, dt, arrival_floor=arrival_noise_k * noise)
+    peak3d = np.zeros(mask.shape, np.float32); peak3d[tuple(idx.T)] = f.peak
     raw_peak = curves.max(axis=1)
     # bolus window anchored on the whole-brain tissue curve. Its time-to-peak is robust (the
     # arrival of a noisy mean curve is not); arteries peak before tissue does.
@@ -127,7 +159,8 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     cmin = med.min(axis=1)
     shape_ok = (f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= 15.0) & (f.peak >= 0.7 * raw_peak)
     # primary window: anchored on the tissue arrival (validated on ISLES 2018)
-    plausible = shape_ok & (f.ttp >= t_tissue - 8.0) & (f.ttp <= t_tissue + 12.0)
+    # arteries peak before the tissue does; a curve peaking after the tissue mean is venous
+    plausible = shape_ok & (f.ttp >= t_tissue - 8.0) & (f.ttp <= min(t_tissue + 12.0, ttp_tissue - aif_lead))
     # fallback window: anchored on the tissue peak, and the pre-arrival segment must be flat
     # (no bump above 30 % of the peak before the curve rises)
     T_idx = np.arange(T)[None, :]
@@ -142,7 +175,7 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
         top = cost >= ctop
         top3d = np.zeros(mask.shape, bool); top3d[tuple(idx[top].T)] = True
         score3d = np.full(mask.shape, -np.inf, np.float32); score3d[tuple(idx.T)] = cost
-        m = _best_cluster(top3d, score3d, min_sz)
+        m = _best_cluster(top3d, score3d, min_sz, peak3d=peak3d)
         m = _grow(m, conc, mask, frac=0.6)
         return m
 
@@ -179,6 +212,13 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
             if float(f2.ttp[0]) <= ttp_tissue - 1.0 and a2.max() >= 12.0:
                 qc["aif_fallback"] = True
                 aif_mask, aif_raw = m2, a2
+    if aif_mask.sum() == 0 or not np.isfinite(aif_raw).all() or aif_raw.max() <= 0:
+        # last resort so the pipeline never runs on an empty AIF: the tallest plausible voxels, flagged
+        pool = plausible if plausible.sum() >= min_cluster else np.ones(len(curves), bool)
+        order = np.argsort(np.where(pool, f.peak, -np.inf))[-max(min_cluster, 10):]
+        aif_mask = np.zeros(mask.shape, bool); aif_mask[tuple(idx[order].T)] = True
+        aif_raw = conc[aif_mask].mean(axis=0)
+        qc["aif_last_resort"] = True
     aif_arrival = float(curve_features(aif_raw[None], dt).arrival[0])
 
     vof = vof_mask = vof_arrival = None

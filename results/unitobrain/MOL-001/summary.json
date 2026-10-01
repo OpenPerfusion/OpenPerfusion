@@ -1,0 +1,91 @@
+{
+  "dicom": {
+    "pixel_spacing": [
+      0.488281,
+      0.488281
+    ],
+    "slice_thickness": 5.0,
+    "manufacturer": "GE MEDICAL SYSTEMS",
+    "model": "LightSpeed VCT",
+    "kvp": 80.0,
+    "rows": 512,
+    "cols": 512,
+    "n_slices": 16,
+    "n_times": 50,
+    "shuttle_mode": true
+  },
+  "read_seconds": 6.0,
+  "pipeline_seconds": 19.9,
+  "motion": {
+    "seconds": 108.4,
+    "max_shift_mm": 0.13,
+    "max_rot_deg": 0.0
+  },
+  "aif": {
+    "peak_hu": 363.2,
+    "n_voxels": 157,
+    "k_av": 1.0,
+    "slices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "qc": {
+      "aif_primary_weak": false,
+      "n_aif_voxels": 157,
+      "aif_peak": 363.1777648925781,
+      "aif_ttp": 22.0,
+      "tissue_ttp": 26.0,
+      "n_vof_voxels": 1434,
+      "vof_peak": 221.31239318847656,
+      "vof_tail_fraction": 0.24231801258817526,
+      "truncated": false,
+      "aif_weak": false,
+      "k_av": 1.0
+    }
+  },
+  "core_ml": 1.1,
+  "hypoperfusion_ml": 232.2,
+  "mismatch_ratio": 211.24,
+  "tmax_ml": {
+    "4": 367.0,
+    "6": 232.2,
+    "8": 125.8,
+    "10": 61.0
+  },
+  "hir": 0.26,
+  "defuse3": true,
+  "brain_median": {
+    "cbf": 14.0,
+    "cbv": 2.56,
+    "mtt": 10.7,
+    "tmax": 3.2
+  },
+  "agreement_with_nlr_maps": {
+    "NLR_CBF": {
+      "ours_median": 14.16,
+      "ref_median": 15.0,
+      "pearson": 0.734,
+      "spearman": 0.548
+    },
+    "NLR_CBV": {
+      "ours_median": 2.59,
+      "ref_median": 1.47,
+      "pearson": 0.879,
+      "spearman": 0.754
+    },
+    "NLR_MTT": {
+      "ours_median": 10.66,
+      "ref_median": 6.38,
+      "pearson": 0.43,
+      "spearman": 0.513
+    },
+    "NLR_Delay": {
+      "ours_median": 3.15,
+      "ref_median": -0.32,
+      "pearson": 0.307,
+      "spearman": 0.33
+    }
+  }
+}
