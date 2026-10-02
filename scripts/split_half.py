@@ -26,7 +26,7 @@ def grid():
     engines = [dict(method="bcsvd", lam=0.05), dict(method="bcsvd", lam=0.10), dict(method="bcsvd", lam=0.15),
                dict(method="osvd", oi_threshold=0.05)]
     for eng, sig in itertools.product(engines, [1.5, 2.0, 2.5]):
-        yield {**eng, "spatial_sigma": sig}
+        yield {**eng, "spatial_sigma_mm": sig}
 
 
 def score(summ):

@@ -1,6 +1,6 @@
 # OpenPerfusion — open-source CT perfusion for acute stroke
 
-**Status: research prototype (v0.2.0). Research use only. Not a medical device. Not for clinical decision-making.**
+**Status: research prototype (v0.3.0). Research use only. Not a medical device. Not for clinical decision-making.**
 The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; OpenPerfusion is validated against RAPID output but is not affiliated with it.
 
 ## What it does
@@ -29,7 +29,7 @@ openperfusion dicom /path/to/ctp_dicom_dir --motion --out results/case   # vendo
 ```
 
 Defaults are the configuration validated against RAPID on ISLES 2018: block-circulant SVD with 10 % truncation,
-2-voxel in-plane smoothing, contralateral-hemisphere rCBF reference, 1 mL cluster filter.
+1.5 mm in-plane smoothing, contralateral-hemisphere rCBF reference, 1 mL cluster filter.
 
 ## Input
 
@@ -44,36 +44,42 @@ rotations and recovering them (to < 0.6 voxel and < 1°). Motion parameters are 
 about 256 pixels across and applied at full resolution; the rotation search is skipped for frames whose
 translation-only fit is already near-perfect, so a 512 × 512 × 16-slice × 50-frame export takes about 100 s.
 
-## Real vendor data: UniToBrain (GE LightSpeed VCT, shuttle mode)
+## Real vendor data: UniToBrain (GE LightSpeed VCT, 11 patients, two acquisition modes)
 
-The first real export the reader saw was patient MOL-001 of [UniToBrain](https://ieee-dataport.org/open-access/unitobrain)
-(258 stroke CTPs from a GE LightSpeed VCT, 80 kVp, raw DICOM, open access): 16 slices × 5 mm at 0.49 mm in-plane,
-512 × 512, JPEG-lossless, acquired as two 4 cm table positions sampled alternately every 2.8 s (shuttle mode). The
-reader parsed the geometry, timing and HU scaling unaided and flagged the shuttle pattern; `scripts/fetch_unitobrain.py`
-pulls single patients out of the 80 GB archive by HTTP range requests, and `scripts/unitobrain_compare.py` runs the
-pipeline on one patient and compares with the dataset's own NLR maps.
+The first real exports the reader saw were eleven patients of [UniToBrain](https://ieee-dataport.org/open-access/unitobrain)
+(258 stroke CTPs from a GE LightSpeed VCT, 80 kVp, raw DICOM, open access). `scripts/fetch_unitobrain.py` pulls
+single patients out of the 80 GB archive by HTTP range requests (about 130 MB per patient); `scripts/unitobrain_batch.py`
+runs every patient and compares with the dataset's own NLR maps; per-patient results are in `results/unitobrain/`.
+They turned out to be two different protocols, and between them they found five real bugs, all fixed and all now defaults:
 
-It also found the first real bug. At 0.49 mm and 80 kVp the per-voxel noise is high enough that a 50 HU curve
-crosses 20 % of its peak inside the noise, so weak voxels looked like the earliest-arriving ones and the AIF
-selector chose a 44 HU cluster over basal arteries peaking above 500 HU. Three changes fixed it, and they are now the
-defaults: each voxel's arrival threshold is at least four standard deviations of its own pre-bolus noise; a candidate
-cluster is scored on its bright core (voxels above half the cluster's 95th-percentile peak) rather than on all the
-partial-volume voxels along the vessel; and an AIF candidate must peak at least 2 s before the whole-brain tissue
-curve (later ones are venous or dispersed). On ISLES 2018 the same changes tightened the Tmax > 6 limits of
-agreement from ±50 to about ±37 mL and raised the ICC from 0.87 to 0.93 (table below), so they were not a special
-case for one scanner. The MOL-001 maps show a left MCA-territory Tmax prolongation with a 1 mL core, on the same side
-as the dataset's delay map; the patient did not move (max shift 0.13 mm). Whole-brain median CBF matches the NLR
-reference (14 vs 15 mL/100 g/min, r = 0.73); our CBV and MTT are 1.7× theirs, a scaling question that needs a
-second reference before it can be attributed to either side.
+| what the data looked like | what broke | fix |
+|---|---|---|
+| 512 × 512 at 0.49 mm, 80 kVp (noise 5–8 HU per voxel) | a 50 HU curve crosses 20 % of its peak inside the noise, so weak voxels looked like the earliest arrivals and the AIF selector chose a 44 HU cluster over basal arteries at 500 HU | per-voxel arrival threshold ≥ 4 SD of the curve's own pre-bolus noise; candidate clusters scored on their bright core; AIF must peak ≥ 2 s before the whole-brain tissue curve |
+| 0.5 s cine frames, slow boluses | noise bumps with peaks of 20–30 HU entered the candidate pool and won on "arrival" | candidate peak must be ≥ 6 × its own noise SD |
+| ICA next to the cavernous sinus at 0.49 mm | the 6-voxel arterial seed grew into 12 voxels peaking 4 s later | cluster growth restricted to voxels peaking within 2 s of the seed |
+| GE cine mode: AcquisitionTime identical for all 89 frames; frame time only in private (0019,1024) Mid Scan Time | all frames collapsed onto one time point | the reader chooses the timing source per series (GE mid-scan time, AcquisitionTime, TriggerTime, ContentTime, else InstanceNumber order) and records it in `meta["time_source"]` |
+| 0.49 mm voxels vs ISLES's 0.8–1.0 mm | smoothing and mask erosion were in voxels, so vendor exports got half the physical smoothing and the Tmax maps were patchy | `spatial_sigma_mm`, `mask_open_mm`, `mask_erode_mm` (1.5 / 2 / 1 mm, the smoothing re-selected by split-half), converted per dataset |
 
-One caveat this case makes concrete: absolute CBF and MTT on it depend strongly on the SVD truncation (whole-brain
-median CBF 13, 20 and 32 mL/100 g/min at 10 %, 5 % and 2 % truncation; MTT 10.6, 7.2 and 4.6 s), and the Tmax > 6 s
-volume moves with it (229, 329 and 242 mL). The 10 % default was calibrated against RAPID on ISLES 2018, which is
-sampled every second; this scan is sampled every 2.8 s per slice and resampled to 1 s, which changes the singular
-value spectrum the truncation acts on. The rCBF < 30 % core is unaffected (it is relative to the contralateral
-hemisphere), but the Tmax > 6 volume on shuttle-mode data should not be trusted to RAPID-equivalence until the
-regularisation has been calibrated on RAPID-processed cases with that sampling, which is what the paired cohort is
-for; the ASIST phantom settles the absolute scale independently.
+Patient MOL-001 is a two-position shuttle acquisition (16 slices × 5 mm sampled alternately every 2.8 s); the other
+ten are cine mode (8 slices, 89 frames at 0.5 s, 44 s). All eleven now load unaided, get an arterial input function
+(peaks 100–340 HU) and produce maps a clinician would recognise: left MCA-territory Tmax lesions in MOL-001, -007 and
+-012 and a right-sided one in MOL-011, each on the same side as the dataset's own delay map; a clean negative in
+MOL-005; one patient (MOL-006) who moved 6.4 mm and 6.5°, the first real test of the motion correction, which
+registered the frames in 66 s and still produced a lateralised map. Whole-brain median MTT is 6–9 s on the cine
+cases. Correlation with the NLR reference maps is 0.6 for CBF and 0.6–0.8 for CBV on the ten cine cases (the
+reference maps are from a different, registered and filtered reconstruction, so voxelwise agreement is bounded);
+their absolute CBF is about half of ours and their delay map is not the same quantity as Tmax, so only sidedness
+and relative patterns are compared. On ISLES 2018 the same changes were a net gain (tables below), so none of them
+is a special case for one scanner.
+
+One caveat these cases make concrete: absolute CBF and MTT, and therefore the Tmax > 6 s volume, depend on the SVD
+truncation (on MOL-001, whole-brain median CBF 13, 20 and 32 mL/100 g/min at 10 %, 5 % and 2 % truncation; MTT
+10.6, 7.2 and 4.6 s; Tmax > 6 229, 329 and 242 mL). The 10 % default was calibrated against RAPID on 1 s ISLES data;
+shuttle and 0.5 s cine data are resampled to 1 s, which changes the singular value spectrum the truncation acts on.
+The rCBF < 30 % core is unaffected (it is relative to the contralateral hemisphere), but Tmax > 6 volumes on other
+sampling schemes should not be called RAPID-equivalent until the regularisation has been calibrated on
+RAPID-processed cases with that sampling, which is what the paired cohort is for; the ASIST phantom settles the
+absolute scale independently.
 
 ## Digital phantom
 
@@ -94,56 +100,54 @@ The CBF underestimation at short MTT and the ~2 s positive Tmax offset are prope
 
 ## ISLES 2018: agreement with RAPID (94 training scans)
 
-`openperfusion isles2018 TRAINING` with the defaults (block-circulant SVD, 10 % truncation, 2-voxel in-plane
+`openperfusion isles2018 TRAINING` with the defaults (block-circulant SVD, 10 % truncation, 1.5 mm in-plane
 smoothing, contralateral rCBF reference, 1 mL cluster filter). RAPID maps are the ISLES 2018 reference maps;
 both sets of maps go through the same thresholding code so the comparison isolates the map computation.
 
 | metric | result |
 |---|---|
-| voxelwise Pearson r, CBF / CBV / MTT / Tmax | 0.98 / 0.98 / 0.3 / 0.79 (Spearman 0.87 for Tmax) |
-| Tmax > 6 s volume | ICC 0.93, bias +0.5 mL, LoA -36 to +37 mL, median Dice 0.89 (IQR 0.81–0.93) |
-| rCBF < 30 % core volume | ICC 0.98, bias +0.9 mL, LoA -7 to +8 mL, median Dice 0.82 |
-| DEFUSE-3 target profile | 83/94 agree (kappa 0.71) |
-| core vs follow-up infarct (Dice) | openperfusion 0.29, RAPID 0.29 |
-| runtime | median 0.8 s per case (2–8 slices), 19 s for a 22-slice case |
+| voxelwise Pearson r, CBF / CBV / MTT / Tmax | 0.98 / 0.98 / 0.3 / 0.81 (Spearman 0.89 for Tmax) |
+| Tmax > 6 s volume | ICC 0.95, bias +4.2 mL, LoA -27 to +35 mL, median Dice 0.90 (IQR 0.84–0.93) |
+| rCBF < 30 % core volume | ICC 0.98, bias -0.7 mL, LoA -7 to +6 mL, median Dice 0.83 |
+| DEFUSE-3 target profile | 87/94 agree (kappa 0.80) |
+| core vs follow-up infarct (Dice) | openperfusion 0.27, RAPID 0.29 |
+| runtime | median 1.0 s per case (2–8 slices), 25 s for a 22-slice case |
 
-Which of our thresholds best reproduces RAPID's boundary: Tmax > 6 s (mean Dice 0.80 vs 0.79 at 7 s and 0.77 at 5 s), rCBF < 30 %
-(Dice 0.74 vs 0.60 at 35 % and 0.56 at 25 %). The +2 s Tmax offset seen on the phantom does not appear against RAPID, i.e.
+Which of our thresholds best reproduces RAPID's boundary: Tmax > 6 s (mean Dice 0.83 vs 0.82 at 7 s and 0.77 at 5 s), rCBF < 30 %
+(Dice 0.76 vs 0.64 at 35 % and 0.50 at 25 %). The +2 s Tmax offset seen on the phantom does not appear against RAPID, i.e.
 RAPID carries the same regularisation bias, as expected for a truncated-SVD family.
 
-Input-function selection, after the vendor-data fix described above (noise-relative arrival threshold, cluster-core
-scoring, 2 s lead over the tissue peak): on ISLES 2018 it raised the in-sample Tmax > 6 ICC from 0.87 to 0.93 and
-narrowed the limits of agreement from ±50 to ±37 mL, with 9 cases improving and 4 worsening by more than 0.15 Dice.
-The fallback for artery-free thin slabs (a second search for small, early, narrow 2-voxel clusters when the primary
-curve peaks below 15 HU) remains; 4 cases still rely on it and are flagged (`aif.qc["aif_weak"]`), and `openperfusion
-dicom` prints a warning. A timing-based fallback trigger was tried earlier and rejected (it widened the limits to ±73 mL).
+Input-function selection, after the vendor-data fixes described above (noise-relative arrival threshold and SNR floor,
+cluster-core scoring, timing-constrained growth, 2 s lead over the tissue peak): on ISLES 2018 they raised the
+in-sample Tmax > 6 ICC from 0.87 to 0.95 and narrowed the limits of agreement from ±50 to about ±27 mL, with no case
+worse by more than 0.15 Dice than before and several better. The fallback for artery-free thin slabs (a second search
+for small, early, narrow 2-voxel clusters when the primary curve peaks below 15 HU) remains; one case still relies on
+it and is flagged (`aif.qc["aif_weak"]`), and `openperfusion dicom` prints a warning.
 
 ## Held-out numbers (split-half, the ones to quote)
 
 `scripts/split_half.py` splits the 94 scans at random into halves A and B, scores a 12-configuration grid
-(bcSVD truncation 5 / 10 / 15 %, oSVD target 0.05; smoothing 1.5 / 2.0 / 2.5 voxels) on one half, and evaluates
+(bcSVD truncation 5 / 10 / 15 %, oSVD target 0.05; smoothing 1.5 / 2.0 / 2.5 mm) on one half, and evaluates
 the best configuration on the other half, both ways, so every case is scored once by a configuration that did not
-see it. With the current input-function selection the two halves no longer pick the same truncation (tuning on A
-chose 15 %, tuning on B chose 10 %; both chose 2.0-voxel smoothing), so the held-out numbers below are slightly
-worse than the in-sample ones above, as they should be:
+see it. Both halves independently selected the same configuration (bcSVD 10 %, 1.5 mm smoothing), which is now the
+default; the in-sample table above therefore uses the same configuration and the two agree:
 
 | held-out metric | result |
 |---|---|
-| Tmax > 6 s volume | ICC 0.92, bias +1.5 mL, LoA -41 to +44 mL, mean Dice 0.79, median 0.87 |
-| rCBF < 30 % core volume | ICC 0.98, bias +0.8 mL, LoA -7 to +8 mL, mean Dice 0.71, median 0.82 |
-| DEFUSE-3 target profile | agreement 0.86, kappa 0.66 (13 discordant, all in 2–8-slice slabs; 15/15 agree in the 16–22-slice cases) |
-| voxelwise r, CBF / CBV / Tmax | 0.97 / 0.98 / 0.77 |
-| tune A → test B (15 %) / tune B → test A (10 %) | Tmax > 6 ICC 0.87 / 0.96; core ICC 0.98 / 0.98; kappa 0.65 / 0.68 |
+| Tmax > 6 s volume | ICC 0.95, bias +4.2 mL, LoA -27 to +35 mL, mean Dice 0.83, median 0.90 |
+| rCBF < 30 % core volume | ICC 0.98, bias -0.7 mL, LoA -7 to +6 mL, mean Dice 0.76, median 0.83 |
+| DEFUSE-3 target profile | agreement 0.93, kappa 0.80 (7 discordant, all in 2–8-slice slabs; 15/15 agree in the 16–22-slice cases) |
+| voxelwise r, CBF / CBV / Tmax | 0.98 / 0.98 / 0.81 |
+| tune A → test B / tune B → test A | Tmax > 6 ICC 0.96 / 0.94; core ICC 0.99 / 0.98; kappa 0.88 / 0.73 |
 
-The previous release (v0.1.0, before the input-function change) scored Tmax > 6 ICC 0.87 with limits −52 to +50 mL
-and DEFUSE-3 kappa 0.74 on the same protocol; the change buys volume agreement at a small cost in classification
-agreement near the DEFUSE-3 thresholds in thin slabs. 66 of 94 cases are within 10 mL of RAPID on
-Tmax > 6 and 85 within 5 mL on core. Per-case results: `results/split_half_v7/heldout_pooled_cases.csv`; figure:
-`results/split_half_v7/agreement_heldout_94.png`.
+For the record, the same protocol gave Tmax > 6 ICC 0.87 with limits −52 to +50 mL and DEFUSE-3 kappa 0.74 for
+v0.1.0, and ICC 0.92, −41 to +44 mL, kappa 0.66 for v0.2.0; every change since was motivated by a real vendor export
+and checked here. 71 of 94 cases are within 10 mL of RAPID on Tmax > 6 and 87 within 5 mL on core.
+Per-case results: `results/split_half_v9/heldout_pooled_cases.csv`; figure: `results/split_half_v9/agreement_heldout_94.png`.
 
 ## Next steps
 
-1. More vendor exports: Siemens, Philips and Canon, and a GE case with motion; more UniToBrain patients.
+1. More vendor exports: Siemens, Philips and Canon. (GE: 11 UniToBrain patients in two acquisition modes, including one with 6 mm of motion, are done.)
 2. Request the ASIST-Japan phantom; reproduce the Kudo 2013 delay test.
 3. UHN paired cohort (REB) for multi-vendor, current-RAPID-version calibration.
 4. A DICOM writer for the maps (secondary capture / parametric map) for PACS push-back.

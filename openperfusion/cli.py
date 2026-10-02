@@ -17,14 +17,14 @@ from .maps import threshold_maps, PerfusionMaps
 
 
 def _cfg_from_args(a) -> PipelineConfig:
-    return PipelineConfig(method=a.method, spatial_sigma=a.spatial_sigma, temporal_sigma=a.temporal_sigma,
+    return PipelineConfig(method=a.method, spatial_sigma_mm=a.spatial_sigma_mm, temporal_sigma=a.temporal_sigma,
                           oi_threshold=a.oi, lam=a.lam, pr=a.pr, reference=a.reference,
                           min_cluster_ml=a.min_cluster_ml, restrict_core_to_hypo=a.restrict_core)
 
 
 def _add_common(p):
     p.add_argument("--method", default="bcsvd", choices=["bcsvd", "osvd", "fourier"])
-    p.add_argument("--spatial-sigma", type=float, default=2.0)
+    p.add_argument("--spatial-sigma-mm", type=float, default=1.5)
     p.add_argument("--temporal-sigma", type=float, default=0.0)
     p.add_argument("--oi", type=float, default=0.095, help="oSVD oscillation-index target")
     p.add_argument("--lam", type=float, default=0.10, help="bcSVD truncation fraction")

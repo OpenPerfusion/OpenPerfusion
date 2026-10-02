@@ -13,7 +13,7 @@ Pipeline (see README):
             ->  validation against reference maps (RAPID via ISLES 2018) or phantom truth
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .phantom import make_phantom, PhantomTruth  # noqa: F401
 from .preprocess import brain_mask_ct, concentration_from_hu  # noqa: F401

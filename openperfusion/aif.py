@@ -95,12 +95,15 @@ def _best_cluster(mask3d: np.ndarray, score3d: np.ndarray, min_size: int, peak3d
     return best if best is not None else mask3d
 
 
-def _grow(seed: np.ndarray, conc: np.ndarray, mask: np.ndarray, frac: float = 0.6, iters: int = 3) -> np.ndarray:
+def _grow(seed: np.ndarray, conc: np.ndarray, mask: np.ndarray, frac: float = 0.6, iters: int = 3, max_ttp_diff: int = 2) -> np.ndarray:
     """Grow a seed cluster to the full vessel footprint: connected neighbours (in-plane) whose peak
     enhancement is at least `frac` of the seed's mean peak. Averages more voxels, less selection bias."""
     peak = conc.max(axis=-1)
     thr = frac * float(peak[seed].mean())
-    ok = mask & (peak >= thr)
+    # same timing as the seed: an artery next to a sinus must not grow into it (MOL-007: a 6-voxel
+    # ICA seed peaking at 30 s grew into 12 voxels peaking at 34 s)
+    seed_ttp = int(np.argmax(conc[seed].mean(axis=0)))
+    ok = mask & (peak >= thr) & (np.abs(conc.argmax(axis=-1) - seed_ttp) <= max_ttp_diff)
     se = np.zeros((3, 3, 3), bool); se[:, :, 1] = True
     grown = seed.copy()
     for _ in range(iters):
@@ -127,7 +130,7 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
                    select_vof: bool = True, pvc: bool = True,
                    vof_min_transit: float = 2.0, truncation_frac: float = 0.3,
                    pvc_max: float = 2.5, aif_min_peak: float = 15.0, arrival_noise_k: float = 4.0,
-                   aif_lead: float = 2.0) -> AifResult:
+                   aif_lead: float = 2.0, max_width: float = 15.0, snr_min: float = 6.0) -> AifResult:
     """Select AIF (and VOF) from a (X,Y,Z,T) concentration array within `mask`.
 
     `arrival_noise_k`: each voxel's arrival threshold is at least this many standard deviations of
@@ -135,6 +138,8 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     noisy curves are not read inside the noise. 0 disables it.
     `aif_lead` (s): an AIF candidate must peak at least this long before the whole-brain tissue curve
     peaks; curves peaking with or after the tissue are venous or dispersed.
+    `max_width` (s): largest full width at half maximum accepted for an arterial curve.
+    `snr_min`: a candidate's peak must be at least this many times its own pre-bolus noise SD.
     """
     X, Y, Z, T = conc.shape
     idx = np.argwhere(mask)
@@ -157,7 +162,10 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
 
     # ---- plausibility: a single clean bolus, not flicker, streak or noise ----
     cmin = med.min(axis=1)
-    shape_ok = (f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= 15.0) & (f.peak >= 0.7 * raw_peak)
+    # a candidate must also stand clear of its own noise: at 0.5 s frames and 80 kVp the per-voxel noise
+    # is 7-8 HU and a 25 HU 'curve' is a noise bump with an early argmax
+    shape_ok = ((f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= max_width) & (f.peak >= 0.7 * raw_peak)
+                & (f.peak >= snr_min * np.maximum(noise, 1.0)))
     # primary window: anchored on the tissue arrival (validated on ISLES 2018)
     # arteries peak before the tissue does; a curve peaking after the tissue mean is venous
     plausible = shape_ok & (f.ttp >= t_tissue - 8.0) & (f.ttp <= min(t_tissue + 12.0, ttp_tissue - aif_lead))

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openperfusion"
-version = "0.2.0"
+version = "0.3.0"
 description = "OpenPerfusion: open-source CT perfusion pipeline for acute stroke (research use only, not for clinical decision-making)."
 readme = "README.md"
 requires-python = ">=3.10"

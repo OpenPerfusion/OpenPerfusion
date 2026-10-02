@@ -17,9 +17,14 @@ class PipelineConfig:
     # masking
     mask_lo_hu: float = 0.0
     mask_hi_hu: float = 100.0
-    # smoothing (in-plane voxels / frames)
-    spatial_sigma: float = 2.0
+    # smoothing: in-plane Gaussian sigma in mm (2.0 mm = 2 voxels on ISLES 2018's 0.98 mm grid, where it
+    # was validated; 4 voxels on a 0.49 mm vendor export, so the physical smoothing is the same);
+    # temporal sigma in frames
+    spatial_sigma_mm: float = 1.5
     temporal_sigma: float = 0.0
+    # mask morphology in mm (opening radius, edge erosion); converted to voxels per dataset
+    mask_open_mm: float = 2.0
+    mask_erode_mm: float = 1.0
     # AIF / VOF
     pvc: bool = True
     select_vof: bool = True
@@ -54,8 +59,10 @@ def run_pipeline(hu4d: np.ndarray, dt: float, voxel_size, config: PipelineConfig
                  mask: np.ndarray | None = None) -> PipelineResult:
     cfg = config or PipelineConfig()
     t0 = time.time()
+    dx = float(voxel_size[0])
     if mask is None:
-        mask = brain_mask_ct(hu4d, lo=cfg.mask_lo_hu, hi=cfg.mask_hi_hu)
+        mask = brain_mask_ct(hu4d, lo=cfg.mask_lo_hu, hi=cfg.mask_hi_hu,
+                             open_radius=max(1, int(round(cfg.mask_open_mm / dx))), erode=max(1, int(round(cfg.mask_erode_mm / dx))))
     # pass 1: provisional baseline from the whole-brain curve; AIF from unsmoothed concentration
     conc_raw, n_base, baseline = concentration_from_hu(hu4d, mask)
     aif = select_aif_vof(conc_raw, mask, dt, select_vof=cfg.select_vof, pvc=cfg.pvc)
@@ -66,7 +73,7 @@ def run_pipeline(hu4d: np.ndarray, dt: float, voxel_size, config: PipelineConfig
         n_base = n_base2
         conc_raw, _, baseline = concentration_from_hu(hu4d, mask, n_baseline=n_base)
         aif = select_aif_vof(conc_raw, mask, dt, select_vof=cfg.select_vof, pvc=cfg.pvc)
-    conc, _, _ = concentration_from_hu(hu4d, mask, n_baseline=n_base, spatial_sigma=cfg.spatial_sigma,
+    conc, _, _ = concentration_from_hu(hu4d, mask, n_baseline=n_base, spatial_sigma=cfg.spatial_sigma_mm / dx,
                                        temporal_sigma=cfg.temporal_sigma)
     kw = {"bcsvd": dict(lam=cfg.lam), "osvd": dict(oi_threshold=cfg.oi_threshold), "fourier": dict(pr=cfg.pr)}[cfg.method]
     maps = perfusion_maps(conc, mask, aif.aif, dt, method=cfg.method, **kw)

@@ -88,15 +88,15 @@ def main():
     print(f"{len(cases)} cases loaded")
     configs = []
     for method, sig in itertools.product(["osvd", "bcsvd", "fourier"], [1.0, 2.0, 3.0]):
-        configs.append(dict(method=method, spatial_sigma=sig))
-    configs += [dict(method="osvd", spatial_sigma=2.0, temporal_sigma=1.0),
-                dict(method="osvd", spatial_sigma=2.0, oi_threshold=0.05),
-                dict(method="osvd", spatial_sigma=2.0, oi_threshold=0.15),
-                dict(method="bcsvd", spatial_sigma=2.0, lam=0.10),
-                dict(method="bcsvd", spatial_sigma=2.0, lam=0.25),
-                dict(method="osvd", spatial_sigma=2.0, reference="global_median"),
-                dict(method="osvd", spatial_sigma=2.0, min_cluster_ml=3.0),
-                dict(method="osvd", spatial_sigma=2.0, restrict_core_to_hypo=True)]
+        configs.append(dict(method=method, spatial_sigma_mm=sig))
+    configs += [dict(method="osvd", spatial_sigma_mm=2.0, temporal_sigma=1.0),
+                dict(method="osvd", spatial_sigma_mm=2.0, oi_threshold=0.05),
+                dict(method="osvd", spatial_sigma_mm=2.0, oi_threshold=0.15),
+                dict(method="bcsvd", spatial_sigma_mm=2.0, lam=0.10),
+                dict(method="bcsvd", spatial_sigma_mm=2.0, lam=0.25),
+                dict(method="osvd", spatial_sigma_mm=2.0, reference="global_median"),
+                dict(method="osvd", spatial_sigma_mm=2.0, min_cluster_ml=3.0),
+                dict(method="osvd", spatial_sigma_mm=2.0, restrict_core_to_hypo=True)]
     results = []
     for c in configs:
         t0 = time.time()

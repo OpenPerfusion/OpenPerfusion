@@ -41,17 +41,66 @@ class Ctp4D:
     meta: dict
 
 
+def _tm_seconds(v) -> float | None:
+    """DICOM TM (HHMMSS.ffffff) to seconds of day."""
+    if v in (None, ""):
+        return None
+    s = str(v)
+    try:
+        return int(s[0:2]) * 3600 + int(s[2:4]) * 60 + (float(s[4:]) if len(s) > 4 else 0.0)
+    except ValueError:
+        return None
+
+
+def _private_float(ds, tag) -> float | None:
+    """A private element holding a little-endian float64/float32 (GE stores several timing values this
+    way); pydicom may have decoded the bytes as a string, so go back to the raw bytes."""
+    if tag not in ds:
+        return None
+    import struct
+    try:
+        v = ds.get_item(tag).value
+    except Exception:
+        return None
+    if isinstance(v, str):
+        v = v.encode("latin-1")
+    if isinstance(v, (bytes, bytearray)):
+        if len(v) == 8:
+            return struct.unpack("<d", v)[0]
+        if len(v) == 4:
+            return struct.unpack("<f", v)[0]
+        try:
+            return float(v.decode().strip("\x00 "))
+        except Exception:
+            return None
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
+TIME_SOURCES = ("ge_midscan", "acquisition", "trigger", "content")
+
+
+def _time_candidates(ds) -> dict:
+    """Every timing value a file offers, in seconds. Which one to trust is decided per series: GE
+    cine-mode exports carry the real frame time only in the private Mid Scan Time (0019,1024) while
+    AcquisitionTime is the same for every frame; ContentTime is reconstruction time at 1 s resolution
+    and is a last resort."""
+    out = {"ge_midscan": _private_float(ds, (0x0019, 0x1024)),
+           "acquisition": _tm_seconds(getattr(ds, "AcquisitionTime", None)),
+           "content": _tm_seconds(getattr(ds, "ContentTime", None))}
+    tt = getattr(ds, "TriggerTime", None)
+    out["trigger"] = float(tt) / 1000.0 if tt not in (None, "") else None
+    return out
+
+
 def _time_seconds(ds) -> float | None:
-    """Acquisition time in seconds of day from the first tag available."""
-    for tag in ("AcquisitionTime", "ContentTime", "TriggerTime"):
-        v = getattr(ds, tag, None)
-        if v in (None, ""):
-            continue
-        if tag == "TriggerTime":
-            return float(v) / 1000.0
-        s = str(v)
-        hh, mm, ss = int(s[0:2]), int(s[2:4]), float(s[4:]) if len(s) > 4 else 0.0
-        return hh * 3600 + mm * 60 + ss
+    """Single-file fallback (kept for callers outside the series logic)."""
+    c = _time_candidates(ds)
+    for k in TIME_SOURCES:
+        if c[k] is not None:
+            return c[k]
     return None
 
 
@@ -109,9 +158,9 @@ def read_ctp_dicom(directory: str | Path, dt: float = 1.0, series_uid: str | Non
                         t = int(s[0:2]) * 3600 + int(s[2:4]) * 60 + float(s[4:])
                 z = _z_of(ds) if z is None else z
                 t = float(i) * dt if t is None else t
-                frames.append((suid, z, t, arr[i]))
+                frames.append((suid, z, ({"acquisition": t}, i), arr[i]))
         else:
-            frames.append((suid, _z_of(ds), _time_seconds(ds), arr))
+            frames.append((suid, _z_of(ds), (_time_candidates(ds), int(getattr(ds, "InstanceNumber", 0) or 0)), arr))
     if not frames:
         raise ValueError(f"no CT images found under {directory}")
     # choose the series with the most frames if several
@@ -122,9 +171,28 @@ def read_ctp_dicom(directory: str | Path, dt: float = 1.0, series_uid: str | Non
     fr = series[suid]
     if any(z is None for z, _, _ in fr):
         raise ValueError("DICOM images lack ImagePositionPatient / SliceLocation")
-    if any(t is None for _, t, _ in fr):
-        raise ValueError("DICOM images lack AcquisitionTime / ContentTime / TriggerTime")
-    zs = np.array([z for z, _, _ in fr]); ts = np.array([t for _, t, _ in fr])
+    zs = np.array([z for z, _, _ in fr])
+    # choose the timing source for this series: the first (in priority order) that actually varies
+    # across the frames of a slice; otherwise order frames by InstanceNumber at the nominal dt
+    z_round = np.round(zs / z_tolerance)
+    n_per_slice = np.median(np.unique(z_round, return_counts=True)[1])
+    time_source = None
+    for src in TIME_SOURCES:
+        vals = [c.get(src) if isinstance(c, dict) else None for (c, _) in (t for _, t, _ in fr)]
+        if any(v is None for v in vals):
+            continue
+        vals = np.array(vals, float)
+        n_unique = np.median([len(np.unique(vals[z_round == zz])) for zz in np.unique(z_round)])
+        if n_per_slice <= 1 or n_unique >= max(2, 0.5 * n_per_slice):
+            ts = vals; time_source = src
+            break
+    if time_source is None:
+        order = np.array([i for _, (c, i), _ in fr], float)
+        ts = np.zeros(len(fr))
+        for zz in np.unique(z_round):
+            sel = np.where(z_round == zz)[0]
+            ts[sel] = np.argsort(np.argsort(order[sel])) * dt
+        time_source = "instance_order"
     # slice bins
     zu = np.unique(np.round(zs / z_tolerance) * z_tolerance)
     zu = np.array(sorted(zu))
@@ -167,6 +235,8 @@ def read_ctp_dicom(directory: str | Path, dt: float = 1.0, series_uid: str | Non
     ps = meta.get("pixel_spacing", (1.0, 1.0))
     meta["n_slices"] = len(zbins); meta["n_times"] = len(times)
     meta["shuttle_mode"] = bool(max(len(t) for t in raw_times) < 0.8 * len(times))   # fewer native samples than grid points
+    meta["time_source"] = time_source
+    meta["native_dt"] = float(np.median(np.diff(raw_times[0]))) if len(raw_times[0]) > 1 else None
     return Ctp4D(hu=hu, dt=dt, times=times, voxel_size=(ps[1], ps[0], dz), z_positions=zbins, raw_times=raw_times,
                  series_uid=suid, n_files=len(fr), meta=meta)
 
