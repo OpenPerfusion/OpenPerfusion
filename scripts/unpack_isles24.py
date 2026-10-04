@@ -17,6 +17,9 @@ root, out = sys.argv[1], sys.argv[2]; os.makedirs(out, exist_ok=True)
 rows = []
 for f in sorted(glob.glob(os.path.join(root, "train-*.parquet"))):
     try:
+        sids = pq.read_table(f, columns=["subject_id"]).column("subject_id").to_pylist()
+        if all(os.path.isdir(os.path.join(out, s)) and glob.glob(os.path.join(out, s, "*_ctp.nii.gz")) for s in sids):
+            continue                      # already unpacked; skip reading the 170 MB of image bytes
         t = pq.read_table(f)
     except Exception as e:
         print("skip", f, e); continue
@@ -36,7 +39,15 @@ for f in sorted(glob.glob(os.path.join(root, "train-*.parquet"))):
             elif not isinstance(v, dict):
                 rec[k] = v
         rows.append(rec); print(sid, "->", n, "files", flush=True)
-keys = sorted({k for r in rows for k in r}, key=lambda k: (k != "subject_id", k))
+# clinical fields for every subject, re-read cheaply (scalar columns only) so the CSV is always complete
+meta = []
+for f in sorted(glob.glob(os.path.join(root, "train-*.parquet"))):
+    try:
+        t = pq.read_table(f, columns=["subject_id", "age", "sex", "nihss_admission", "mrs_admission", "mrs_3month"])
+        meta += t.to_pylist()
+    except Exception:
+        pass
+keys = ["subject_id", "age", "sex", "nihss_admission", "mrs_admission", "mrs_3month"]
 with open(os.path.join(out, "subjects.csv"), "w", newline="") as fh:
-    w = csv.DictWriter(fh, fieldnames=keys); w.writeheader(); w.writerows(rows)
-print("wrote", os.path.join(out, "subjects.csv"))
+    w = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore"); w.writeheader(); w.writerows(meta)
+print("wrote", os.path.join(out, "subjects.csv"), "with", len(meta), "subjects")
