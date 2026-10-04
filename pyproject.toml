@@ -26,7 +26,8 @@ Issues = "https://github.com/OpenPerfusion/OpenPerfusion/issues"
 Discussions = "https://github.com/OpenPerfusion/OpenPerfusion/discussions"
 
 [project.optional-dependencies]
-dicom = ["pydicom>=2.4"]
+dicom = ["pydicom>=2.4", "pylibjpeg", "pylibjpeg-libjpeg"]
+register = ["SimpleITK>=2.3"]
 dev = ["pytest>=7"]
 
 [project.scripts]

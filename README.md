@@ -81,6 +81,34 @@ sampling schemes should not be called RAPID-equivalent until the regularisation 
 RAPID-processed cases with that sampling, which is what the paired cohort is for; the ASIST phantom settles the
 absolute scale independently.
 
+## ISLES'24: Siemens and Philips scanners, icobrain cva as the reference (first 10 subjects)
+
+[ISLES'24](https://pubs.rsna.org/doi/10.1148/ryai.250603) has 149 training subjects from two centres on Siemens
+(Somatom Force, Xcite, AS+) and Philips (Brilliance 64, Ingenuity) scanners, with the 4D CTP (co-registered,
+1 s frames, 1 x 1 x 5 mm here) and CBF/CBV/MTT/Tmax maps from icobrain cva, a second FDA-cleared package, plus the
+follow-up DWI lesion. `scripts/unpack_isles24.py` unpacks the Hugging Face parquet mirror; `openperfusion/io_isles2024.py`
+loads a subject in the same shape as the ISLES 2018 loader so the same harness runs (`scripts/run_isles2024.py`).
+
+The maps live on the NCCT grid and the CTP on its own, and for some subjects the header alignment between the two
+is off by millimetres to centimetres (sub-stroke0010: 37 mm), so the loader refines it with a rigid registration of
+the CTP pre-contrast mean to the NCCT (`openperfusion/register.py`, SimpleITK, mutual information) and keeps the
+registered alignment when it improves the brain-window correlation. That raised voxelwise r for CBF from 0.57 to
+0.76 and Tmax > 6 Dice from 0.60 to 0.68 on these ten.
+
+| metric, 10 subjects, defaults as validated on ISLES 2018 (no tuning) | result |
+|---|---|
+| Tmax > 6 s volume | ICC 0.95, bias +1.1 mL, LoA -61 to +63 mL, mean Dice 0.68 (0.37–0.85) |
+| rCBF < 30 % core volume | ICC 0.88, bias -0.2 mL, mean Dice 0.33 (cores are 0–34 mL) |
+| voxelwise r, CBF / CBV / Tmax | 0.76 / 0.73 / 0.61 |
+| which Tmax threshold best matches icobrain's > 6 s boundary | 6 s (Dice 0.68; 5 s 0.65, 7 s 0.65) |
+| hypoperfusion vs follow-up infarct, Dice | ours 0.17, icobrain 0.18 |
+
+Reading it: against a second commercial package, on two more vendors, with no tuning, the volumes agree as well
+as they do with RAPID (ICC 0.95) and the 6 s boundary is the same; voxelwise overlap is lower than against RAPID
+because icobrain's maps are much more heavily smoothed than ours (visible in `results/isles24_10/montage.png`)
+and because the comparison crosses a registration. Per-subject results: `results/isles24_10/cases.csv`. The
+remaining 139 subjects are the obvious next run.
+
 ## Digital phantom
 
 `openperfusion.phantom.make_phantom()` builds a Kudo-style phantom: a 7 × 7 grid of tiles spanning CBF 10–70 mL/100 g/min × MTT 4–16 s, one slice per tracer delay (0–3 s), exponential or box residue functions, an arterial block (partial-volumed to 70 %), a venous block (delayed, dispersed, same area), normal reference tissue (CBF 50 / MTT 4), a CSF block, skull and air. Curves are generated on a 0.05 s grid and sampled at 1 s, so the estimator sees realistic discretisation error. Noise is Gaussian in HU.
@@ -164,6 +192,8 @@ openperfusion/pipeline.py      end-to-end run + config
 openperfusion/validate.py      phantom report; reference comparison; ICC, Bland-Altman, kappa
 openperfusion/report.py        figures
 openperfusion/io_isles2018.py  ISLES 2018 loader
+openperfusion/io_isles2024.py  ISLES'24 loader (icobrain maps registered into the CTP grid)
+openperfusion/register.py       rigid CTP-to-NCCT registration (SimpleITK, optional)
 openperfusion/io_dicom.py       DICOM 4D reader (+ synthetic DICOM writer for tests)
 openperfusion/motion.py         rigid in-plane motion correction
 openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`, `openperfusion dicom`

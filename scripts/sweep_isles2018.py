@@ -22,12 +22,12 @@ from openperfusion.maps import threshold_maps, PerfusionMaps
 from openperfusion.validate import dice, icc21, bland_altman, compare_to_reference, summarize_cases
 
 
-def run_config(cases, cfg: PipelineConfig, tmax_grid=(4, 5, 6, 7, 8, 9, 10), core_grid=(0.25, 0.30, 0.35, 0.40)):
+def run_config(cases, cfg: PipelineConfig, tmax_grid=(4, 5, 6, 7, 8, 9, 10), core_grid=(0.25, 0.30, 0.35, 0.40), loader=load_case):
     rows = []
     for d in cases:
         if not isinstance(d, dict):            # a path: load lazily, one case in memory at a time
             try:
-                d = load_case(d)
+                d = loader(d)
             except Exception as e:
                 print(f"{d}: load failed: {e}", flush=True); continue
             if d["ctp4d"] is None:
@@ -60,7 +60,8 @@ def run_config(cases, cfg: PipelineConfig, tmax_grid=(4, 5, 6, 7, 8, 9, 10), cor
                                  min_cluster_ml=cfg.min_cluster_ml, restrict_core_to_hypo=cfg.restrict_core_to_hypo)
             extra[f"dice_core_c{int(cf*100)}"] = dice(t_o.core, t_ref.core)
             extra[f"core_ml_c{int(cf*100)}"] = t_o.core_ml
-        rows.append({"case": d["case"], "shape": str(d["ctp4d"].shape), **cmp, **extra, "aif_n": res.aif.qc.get("n_aif_voxels"),
+        reg = {f"reg_{k}": (str(v) if isinstance(v, list) else v) for k, v in d["registration"].items()} if isinstance(d.get("registration"), dict) else {}
+        rows.append({"case": d["case"], "shape": str(d["ctp4d"].shape), **cmp, **extra, **reg, "aif_n": res.aif.qc.get("n_aif_voxels"),
                      "aif_peak": res.aif.qc.get("aif_peak"), "k_av": res.aif.k_av, "n_baseline": res.n_baseline,
                      "seconds": res.qc["seconds"]})
         print(f"{d['case']}: r_tmax={cmp.get('r_tmax', float('nan')):.2f} hypo {cmp['hypo_ml_ours']:.0f}/{cmp['hypo_ml_ref']:.0f} dice {cmp['dice_hypo']:.2f} core {cmp['core_ml_ours']:.0f}/{cmp['core_ml_ref']:.0f} {res.qc['seconds']}s", flush=True)
