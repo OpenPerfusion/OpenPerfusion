@@ -48,12 +48,53 @@ def resample_to(src_img, target_shape, target_affine, order=1, cval=0.0) -> np.n
     return out.reshape(X, Y, Z).astype(np.float32)
 
 
+def _nifti_from_bytes(b: bytes) -> nib.Nifti1Image:
+    import gzip, io
+    raw = gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b
+    return nib.Nifti1Image.from_bytes(raw)
+
+
+def find_shards(root) -> list[Path]:
+    """ISLES'24 parquet shards (one subject each) from the Hugging Face mirror."""
+    return sorted(Path(root).glob("train-*.parquet"))
+
+
+def load_subject_from_parquet(shard: Path, load_4d: bool = True, register: bool = True) -> dict:
+    """Load a subject straight from its parquet shard (no files written): the NIfTI bytes are decoded in
+    memory. Saves the ~220 MB per subject that unpacking costs on disk."""
+    import pyarrow.parquet as pq
+    t = pq.read_table(str(shard))
+    r = t.to_pylist()[0]
+    imgs = {}
+    for key in ("ctp", "ncct", "cbf", "cbv", "mtt", "tmax", "lesion_mask", "lvo_mask"):
+        v = r.get(key)
+        if isinstance(v, dict) and v.get("bytes"):
+            imgs[key] = _nifti_from_bytes(v["bytes"])
+    if "ctp" not in imgs:
+        raise FileNotFoundError(f"no CTP in {shard}")
+    out = _build(r["subject_id"], imgs, load_4d, register)
+    out["clinical"] = {k: r.get(k) for k in ("age", "sex", "nihss_admission", "mrs_admission", "mrs_3month")}
+    return out
+
+
 def load_subject(sub: Path, load_4d: bool = True, register: bool = True) -> dict:
     sub = Path(sub)
     ctp_f = _first(sub, "*_ses-01_ctp.nii*")
     if ctp_f is None:
         raise FileNotFoundError(f"no CTP in {sub}")
-    ctp = nib.load(str(ctp_f))
+    imgs = {"ctp": nib.load(str(ctp_f))}
+    for key, pat in (("ncct", "*_ses-01_ncct.nii*"), ("cbf", "*_ses-01_space-ncct_cbf.nii*"), ("cbv", "*_ses-01_space-ncct_cbv.nii*"),
+                     ("mtt", "*_ses-01_space-ncct_mtt.nii*"), ("tmax", "*_ses-01_space-ncct_tmax.nii*"),
+                     ("lesion_mask", "*_ses-02_space-ncct_lesion-msk.nii*"), ("lvo_mask", "*_space-ncct_lvo-msk.nii*")):
+        f = _first(sub, pat)
+        if f: imgs[key] = nib.load(str(f))
+    out = _build(sub.name, imgs, load_4d, register)
+    out["paths"] = {k: str(v.file_map["image"].filename) for k, v in imgs.items() if getattr(v, "file_map", None)}
+    return out
+
+
+def _build(name: str, imgs: dict, load_4d: bool, register: bool) -> dict:
+    ctp = imgs["ctp"]
     zooms = ctp.header.get_zooms()
     dt = float(zooms[3]) if len(zooms) > 3 and zooms[3] > 0 else 1.0
     if dt > 20:               # some headers store ms
@@ -61,18 +102,17 @@ def load_subject(sub: Path, load_4d: bool = True, register: bool = True) -> dict
     shape3 = ctp.shape[:3]
     voxel_size = tuple(float(z) for z in zooms[:3])
     ctp_affine = ctp.affine
-    out = dict(case=sub.name, dt=dt, voxel_size=voxel_size, affine=ctp_affine, paths={"ctp": str(ctp_f)}, ct=None)
+    out = dict(case=name, dt=dt, voxel_size=voxel_size, affine=ctp_affine, paths={}, ct=None)
     hu = np.asarray(ctp.dataobj, np.float32)
     out["ctp4d"] = hu if load_4d else None
     # alignment of the NCCT-space maps to the CTP grid: header first, refined by rigid registration of the
     # CTP pre-contrast mean to the NCCT when the NCCT is present and SimpleITK is installed
-    ncct_f = _first(sub, "*_ses-01_ncct.nii*")
+    ncct = imgs.get("ncct")
     tx = None
     out["registration"] = {"method": "header"}
-    if ncct_f is not None and register:
+    if ncct is not None and register:
         try:
             from .register import register_ctp_to_ref, resample_ref_to_ctp, transform_summary
-            ncct = nib.load(str(ncct_f))
             mean = hu[..., :max(3, min(8, hu.shape[-1] // 6))].mean(-1)
             brain = (mean > 0) & (mean < 100)
             def ncc(a, b):
@@ -93,15 +133,9 @@ def load_subject(sub: Path, load_4d: bool = True, register: bool = True) -> dict
         from .register import resample_ref_to_ctp
         return resample_ref_to_ctp(img, ctp, tx, order=order)
     for key in ("cbf", "cbv", "mtt", "tmax"):
-        f = _first(sub, f"*_ses-01_space-ncct_{key}.nii*")
-        out[key] = pull(nib.load(str(f)), 1) if f else None
-        if f: out["paths"][key] = str(f)
-    les = _first(sub, "*_ses-02_space-ncct_lesion-msk.nii*")
-    out["lesion"] = (pull(nib.load(str(les)), 0) > 0.5) if les else None
-    if les: out["paths"]["lesion"] = str(les)
-    for key in ("lvo", "cow"):
-        f = _first(sub, f"*_space-ncct_{key}-msk.nii*")
-        if f: out["paths"][key] = str(f)
+        out[key] = pull(imgs[key], 1) if key in imgs else None
+    out["lesion"] = (pull(imgs["lesion_mask"], 0) > 0.5) if "lesion_mask" in imgs else None
+    out["lvo"] = (pull(imgs["lvo_mask"], 0) > 0.5) if "lvo_mask" in imgs else None
     # icobrain fills non-brain voxels with -30 in Tmax and 0 in the other maps; mark those NaN so the
     # harness (which keeps voxels with finite reference and CBF > 0) skips them
     if out["tmax"] is not None:
