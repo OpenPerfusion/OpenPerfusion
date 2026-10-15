@@ -61,6 +61,23 @@ def bolus_arrival_time(curve: np.ndarray, dt: float, frac: float = 0.10) -> floa
     return float(above[0] * dt) if len(above) else 0.0
 
 
+def second_peak_fraction(curves: np.ndarray, frac_down: float = 0.4) -> np.ndarray:
+    """For each (N, T) curve: the largest value reached after the curve has first fallen below
+    `frac_down` of its peak following the peak, as a fraction of the peak. Recirculation gives
+    0.2-0.35; a flickering or shuttle-artefact "vessel" gives > 0.5."""
+    c = np.asarray(curves, np.float32)
+    N, T = c.shape
+    peak = c.max(axis=1); ipk = c.argmax(axis=1)
+    tt = np.arange(T)[None, :]
+    after = tt > ipk[:, None]
+    below = after & (c < (frac_down * peak)[:, None])
+    first_below = np.where(below.any(axis=1), below.argmax(axis=1), T)        # first index below threshold after the peak
+    later = tt > first_below[:, None]
+    second = np.where(later, c, -np.inf).max(axis=1)
+    out = np.where(np.isfinite(second) & (peak > 0), second / np.maximum(peak, 1e-6), 0.0)
+    return out.astype(np.float32)
+
+
 def _z(x: np.ndarray) -> np.ndarray:
     s = x.std()
     return (x - x.mean()) / s if s > 0 else np.zeros_like(x)
@@ -95,7 +112,8 @@ def _best_cluster(mask3d: np.ndarray, score3d: np.ndarray, min_size: int, peak3d
     return best if best is not None else mask3d
 
 
-def _grow(seed: np.ndarray, conc: np.ndarray, mask: np.ndarray, frac: float = 0.6, iters: int = 3, max_ttp_diff: int = 2) -> np.ndarray:
+def _grow(seed: np.ndarray, conc: np.ndarray, mask: np.ndarray, frac: float = 0.6, iters: int = 3, max_ttp_diff: int = 2,
+          allowed: np.ndarray | None = None) -> np.ndarray:
     """Grow a seed cluster to the full vessel footprint: connected neighbours (in-plane) whose peak
     enhancement is at least `frac` of the seed's mean peak. Averages more voxels, less selection bias."""
     peak = conc.max(axis=-1)
@@ -104,6 +122,8 @@ def _grow(seed: np.ndarray, conc: np.ndarray, mask: np.ndarray, frac: float = 0.
     # ICA seed peaking at 30 s grew into 12 voxels peaking at 34 s)
     seed_ttp = int(np.argmax(conc[seed].mean(axis=0)))
     ok = mask & (peak >= thr) & (np.abs(conc.argmax(axis=-1) - seed_ttp) <= max_ttp_diff)
+    if allowed is not None:
+        ok &= allowed            # only voxels that passed the single-bolus plausibility tests themselves
     se = np.zeros((3, 3, 3), bool); se[:, :, 1] = True
     grown = seed.copy()
     for _ in range(iters):
@@ -130,7 +150,8 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
                    select_vof: bool = True, pvc: bool = True,
                    vof_min_transit: float = 2.0, truncation_frac: float = 0.3,
                    pvc_max: float = 2.5, aif_min_peak: float = 15.0, arrival_noise_k: float = 4.0,
-                   aif_lead: float = 2.0, max_width: float = 15.0, snr_min: float = 6.0) -> AifResult:
+                   aif_lead: float = 2.0, max_width: float = 15.0, snr_min: float = 6.0,
+                   max_second_peak: float = 0.5) -> AifResult:
     """Select AIF (and VOF) from a (X,Y,Z,T) concentration array within `mask`.
 
     `arrival_noise_k`: each voxel's arrival threshold is at least this many standard deviations of
@@ -140,6 +161,8 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     peaks; curves peaking with or after the tissue are venous or dispersed.
     `max_width` (s): largest full width at half maximum accepted for an arterial curve.
     `snr_min`: a candidate's peak must be at least this many times its own pre-bolus noise SD.
+    `max_second_peak`: largest later rise (as a fraction of the peak, after the curve has fallen below 40 %
+    of it) accepted for a candidate; recirculation is 0.2-0.35.
     """
     X, Y, Z, T = conc.shape
     idx = np.argwhere(mask)
@@ -164,8 +187,12 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     cmin = med.min(axis=1)
     # a candidate must also stand clear of its own noise: at 0.5 s frames and 80 kVp the per-voxel noise
     # is 7-8 HU and a 25 HU 'curve' is a noise bump with an early argmax
+    # ... and a single bolus: a second rise above half the peak after the curve has come down is a
+    # flicker or a shuttle-registration artefact, not an artery (ISLES'24 sub-stroke0028: a 300 HU
+    # "AIF" with three peaks 16 s apart turned the whole slab into Tmax > 6)
+    second = second_peak_fraction(med)
     shape_ok = ((f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= max_width) & (f.peak >= 0.7 * raw_peak)
-                & (f.peak >= snr_min * np.maximum(noise, 1.0)))
+                & (f.peak >= snr_min * np.maximum(noise, 1.0)) & (second <= max_second_peak))
     # primary window: anchored on the tissue arrival (validated on ISLES 2018)
     # arteries peak before the tissue does; a curve peaking after the tissue mean is venous
     plausible = shape_ok & (f.ttp >= t_tissue - 8.0) & (f.ttp <= min(t_tissue + 12.0, ttp_tissue - aif_lead))
@@ -175,6 +202,7 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     pre = np.where(T_idx < (f.arrival / dt)[:, None], med, 0.0).max(axis=1)
     plausible_fb = shape_ok & (pre <= 0.3 * f.peak) & (f.ttp >= ttp_tissue - 15.0) & (f.ttp <= ttp_tissue + 1.0)
     k1, k2, k3 = weights
+    shape3d = np.zeros(mask.shape, bool); shape3d[tuple(idx.T)] = shape_ok
 
     def _pick(cand, min_sz):
         cost = np.full(len(curves), -np.inf, np.float32)
@@ -184,7 +212,7 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
         top3d = np.zeros(mask.shape, bool); top3d[tuple(idx[top].T)] = True
         score3d = np.full(mask.shape, -np.inf, np.float32); score3d[tuple(idx.T)] = cost
         m = _best_cluster(top3d, score3d, min_sz, peak3d=peak3d)
-        m = _grow(m, conc, mask, frac=0.6)
+        m = _grow(m, conc, mask, frac=0.6, allowed=None)
         return m
 
     # ---- primary: tallest plausible curves (large arteries, well above tissue enhancement) ----
@@ -208,7 +236,9 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     # Only amplitude decides: on ISLES 2018 a timing-based trigger (primary peak not leading the
     # tissue peak by >= 1 s) fired on many good AIFs and replaced them with 2-voxel picks that were
     # worse (pooled Tmax>6 ICC fell from 0.86 to 0.78). Amplitude alone flags the 14 artery-free slabs.
-    weak = bool(aif_raw.max() < aif_min_peak) or (ttp_primary < max(4.0, ttp_tissue - 15.0))
+    # a primary curve that is itself multi-peaked (artefact) or absurdly early also goes to the fallback
+    weak = (bool(aif_raw.max() < aif_min_peak) or (ttp_primary <= max(4.0, ttp_tissue - 15.0))
+            or float(second_peak_fraction(aif_raw[None])[0]) > max_second_peak)
     qc["aif_primary_weak"] = bool(weak)
     if weak:
         pool = plausible_fb & (f.width <= 12.0) & (f.peak >= max(12.0, np.percentile(pk_all, 90)))
