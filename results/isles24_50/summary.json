@@ -1,0 +1,75 @@
+{
+ "all": {
+  "n": 50,
+  "hypo_icc": 0.4542149711328011,
+  "hypo_bias": 18.888340047402806,
+  "hypo_loa": [
+   -166.35268105493125,
+   204.12936114973687
+  ],
+  "hypo_dice_mean": 0.6547093927716395,
+  "hypo_dice_median": 0.6916519690563334,
+  "core_icc": 0.7516323237667027,
+  "core_bias": 2.1408190399141365,
+  "core_loa": [
+   -19.382782856073256,
+   23.664420935901525
+  ],
+  "core_dice_mean": 0.32145979038415695,
+  "core_dice_median": 0.3466303218609631,
+  "r_cbf": 0.7628525395944807,
+  "r_cbv": 0.7200227610467376,
+  "r_tmax": 0.5859719980277073,
+  "defuse3_agreement": 0.94,
+  "defuse3_kappa": 0.36974789915966444,
+  "hypo_dice_t4": 0.49996603313913696,
+  "hypo_dice_t5": 0.6002833996764864,
+  "hypo_dice_t6": 0.6522676575385158,
+  "hypo_dice_t7": 0.6400281192028711,
+  "hypo_dice_t8": 0.5841817602523007,
+  "dice_hypo_lesion_ours": 0.14933717746592967,
+  "dice_hypo_lesion_ref": 0.155246742979256,
+  "dice_core_lesion_ours": 0.09989731471697791,
+  "dice_core_lesion_ref": 0.12296456604095697,
+  "registered": 40
+ },
+ "excluding_flagged": {
+  "n": 48,
+  "hypo_icc": 0.8885053261257667,
+  "hypo_bias": 5.70417216022357,
+  "hypo_loa": [
+   -57.63367967303705,
+   69.0420239934842
+  ],
+  "hypo_dice_mean": 0.6654491528460458,
+  "hypo_dice_median": 0.6954544930885677,
+  "core_icc": 0.9386267935112408,
+  "core_bias": 0.7542046674261548,
+  "core_loa": [
+   -9.331870699210317,
+   10.840280034062626
+  ],
+  "core_dice_mean": 0.3268033419565524,
+  "core_dice_median": 0.3466303218609631,
+  "r_cbf": 0.7685476176999787,
+  "r_cbv": 0.7268594067503735,
+  "r_tmax": 0.5962762738874501,
+  "defuse3_agreement": 0.9583333333333334,
+  "defuse3_kappa": 0.4838709677419357,
+  "hypo_dice_t4": 0.5070524244023992,
+  "hypo_dice_t5": 0.6100129196032609,
+  "hypo_dice_t6": 0.6631047049980318,
+  "hypo_dice_t7": 0.6501180293531125,
+  "hypo_dice_t8": 0.5922513213447614,
+  "dice_hypo_lesion_ours": 0.1531413838732053,
+  "dice_hypo_lesion_ref": 0.1573606103158677,
+  "dice_core_lesion_ours": 0.09577026941025606,
+  "dice_core_lesion_ref": 0.11842315879111313,
+  "registered": 39
+ },
+ "flagged": [
+  "sub-stroke0016",
+  "sub-stroke0028"
+ ],
+ "flag_rule": "aif_fallback or aif_last_resort"
+}

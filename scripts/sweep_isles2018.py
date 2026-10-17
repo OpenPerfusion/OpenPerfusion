@@ -61,8 +61,13 @@ def run_config(cases, cfg: PipelineConfig, tmax_grid=(4, 5, 6, 7, 8, 9, 10), cor
             extra[f"dice_core_c{int(cf*100)}"] = dice(t_o.core, t_ref.core)
             extra[f"core_ml_c{int(cf*100)}"] = t_o.core_ml
         reg = {f"reg_{k}": (str(v) if isinstance(v, list) else v) for k, v in d["registration"].items()} if isinstance(d.get("registration"), dict) else {}
-        rows.append({"case": d["case"], "shape": str(d["ctp4d"].shape), **cmp, **extra, **reg, "aif_n": res.aif.qc.get("n_aif_voxels"),
-                     "aif_peak": res.aif.qc.get("aif_peak"), "k_av": res.aif.k_av, "n_baseline": res.n_baseline,
+        q = res.aif.qc
+        rows.append({"case": d["case"], "shape": str(d["ctp4d"].shape), **cmp, **extra, **reg, "aif_n": q.get("n_aif_voxels"),
+                     "aif_peak": q.get("aif_peak"), "k_av": res.aif.k_av, "n_baseline": res.n_baseline,
+                     # the pipeline's own QC flags, so a report can be given with and without the flagged cases
+                     "aif_primary_weak": bool(q.get("aif_primary_weak", False)), "aif_fallback": bool(q.get("aif_fallback", False)),
+                     "aif_last_resort": bool(q.get("aif_last_resort", False)), "aif_weak": bool(q.get("aif_weak", False)),
+                     "truncated": bool(q.get("truncated", False)),
                      "seconds": res.qc["seconds"]})
         print(f"{d['case']}: r_tmax={cmp.get('r_tmax', float('nan')):.2f} hypo {cmp['hypo_ml_ours']:.0f}/{cmp['hypo_ml_ref']:.0f} dice {cmp['dice_hypo']:.2f} core {cmp['core_ml_ours']:.0f}/{cmp['core_ml_ref']:.0f} {res.qc['seconds']}s", flush=True)
         del d

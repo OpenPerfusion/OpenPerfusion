@@ -81,45 +81,57 @@ sampling schemes should not be called RAPID-equivalent until the regularisation 
 RAPID-processed cases with that sampling, which is what the paired cohort is for; the ASIST phantom settles the
 absolute scale independently.
 
-## ISLES'24: Siemens and Philips scanners, icobrain cva as the reference (first 32 subjects)
+## ISLES'24: Siemens and Philips scanners, icobrain cva as the reference (50 subjects)
 
 [ISLES'24](https://pubs.rsna.org/doi/10.1148/ryai.250603) has 149 training subjects from two centres on Siemens
 (Somatom Force, Xcite, AS+) and Philips (Brilliance 64, Ingenuity) scanners, with the 4D CTP (co-registered,
 1 s frames, mostly 1 x 1 x 5 mm) and CBF/CBV/MTT/Tmax maps from icobrain cva, a second FDA-cleared package, plus the
-follow-up DWI lesion. `openperfusion/io_isles2024.py` loads a subject straight from the Hugging Face parquet shards
-(or from unpacked NIfTIs) in the same shape as the ISLES 2018 loader, so the same harness runs (`scripts/run_isles2024.py`).
+follow-up DWI lesion. `scripts/fetch_isles24.py` pulls the parquet shards (one subject each, ~200 MB) from the
+Hugging Face mirror, resumably; `openperfusion/io_isles2024.py` loads a subject straight from its shard in the same
+shape as the ISLES 2018 loader, so the same harness runs (`scripts/run_isles2024.py --parquet`).
 
 The maps live on the NCCT grid and the CTP on its own, and for some subjects the header alignment between the two
 is off by millimetres to centimetres (sub-stroke0010: 37 mm), so the loader refines it with a rigid registration of
 the CTP pre-contrast mean to the NCCT (`openperfusion/register.py`, SimpleITK, mutual information) and keeps the
-registered alignment when it improves the brain-window correlation (24 of 32 subjects). On the first ten that raised
-voxelwise r for CBF from 0.57 to 0.76 and Tmax > 6 Dice from 0.60 to 0.68.
+registered alignment when it improves the brain-window correlation (40 of 50 subjects).
 
-| metric, 32 subjects, defaults as validated on ISLES 2018 (no tuning) | all 32 | excluding the one QC-flagged subject |
+Every run is reported two ways: all subjects, and excluding those the pipeline itself flagged (`aif_fallback` or
+`aif_last_resort`, i.e. the primary AIF search failed and a weaker fallback was used). `scripts/isles2024_qc.py`
+records the flags per subject and `scripts/isles2024_summary.py` writes both summaries; the harness rows now carry
+the flags directly.
+
+| metric, 50 subjects, defaults as validated on ISLES 2018 (no tuning) | all 50 | excluding the 2 flagged |
 |---|---|---|
-| Tmax > 6 s volume | ICC 0.35, bias +26 mL, LoA -202 to +255 mL | ICC 0.88, bias +7 mL, LoA -63 to +77 mL |
-| Tmax > 6 s Dice, mean (median) | 0.66 (0.70) | 0.67 (0.70) |
-| rCBF < 30 % core volume | ICC 0.62, bias +3.5 mL, Dice 0.32 | ICC 0.90, bias +1.3 mL, LoA -10 to +13 mL, Dice 0.33 |
-| voxelwise r, CBF / CBV / Tmax | 0.74 / 0.70 / 0.58 | 0.74 / 0.70 / 0.59 |
-| DEFUSE-3 target-profile agreement | 0.94 | 0.97 |
-| best-matching Tmax threshold for icobrain's > 6 s boundary | 6 s (Dice 0.67; 5 s 0.63, 7 s 0.66) | |
-| hypoperfusion vs follow-up infarct, Dice | ours 0.16, icobrain 0.18 | |
+| Tmax > 6 s volume | ICC 0.45, bias +19 mL, LoA -166 to +204 mL | ICC 0.89, bias +6 mL, LoA -58 to +69 mL |
+| Tmax > 6 s Dice, mean (median) | 0.65 (0.69) | 0.67 (0.70) |
+| rCBF < 30 % core volume | ICC 0.75, bias +2 mL, LoA -19 to +24 mL, Dice 0.32 | ICC 0.94, bias +1 mL, LoA -9 to +11 mL, Dice 0.33 |
+| voxelwise r, CBF / CBV / Tmax | 0.76 / 0.72 / 0.59 | 0.77 / 0.73 / 0.60 |
+| DEFUSE-3 target-profile agreement | 0.94 | 0.96 |
+| best-matching Tmax threshold for icobrain's > 6 s boundary | 6 s (Dice 0.65; 5 s 0.60, 7 s 0.64) | 6 s (Dice 0.66; 5 s 0.61, 7 s 0.65) |
+| hypoperfusion vs follow-up infarct, Dice | ours 0.15, icobrain 0.16 | ours 0.15, icobrain 0.16 |
 
-The flagged subject (sub-stroke0028, 8 x 10 mm slices) carries a periodic artefact through the whole slab: every
-curve, tissue included, rises every ~15 s, which looks like a jog-mode acquisition resampled with imperfect
-registration. Its "arteries" fail the single-bolus test, the pipeline falls back and flags it (`aif_fallback`), and
-the result is a slab-wide Tmax > 6 (712 mL against icobrain's 77 mL). That one case is the difference between the
-two columns, which is the argument for honouring the QC flags: a deployed system would refuse it with a warning
-rather than report it. The case prompted the multi-peak rejection now in the AIF selector (a candidate whose curve
-rises again above half its peak after falling below 40 % of it is not an artery), which was then checked on
-ISLES 2018 and was a small net gain there too.
+![OpenPerfusion vs icobrain cva, 50 ISLES'24 subjects](results/isles24_50/agreement_50.png)
+
+The two flagged subjects: sub-stroke0028 (8 x 10 mm slices) carries a periodic artefact through the whole slab:
+every curve, tissue included, rises every ~15 s, which looks like a jog-mode acquisition resampled with imperfect
+registration. Its "arteries" fail the single-bolus test, the fallback AIF fails it too (second rise 61 % of the
+peak), and the result is a slab-wide Tmax > 6 (712 mL against icobrain's 77 mL). In sub-stroke0016 the primary
+AIF search failed its plausibility checks and the fallback settled on a 41 HU curve; the pick looks arterial and
+its volumes agree (188 vs 153 mL, core 10 vs 9), but it is flagged all the same because the flag is about the
+evidence, not the outcome. One case is the difference
+between the two columns for Tmax > 6, which is the argument for honouring the QC flags: a deployed system would
+refuse sub-stroke0028 with a warning rather than report it. That case prompted the multi-peak rejection now in the
+AIF selector (a candidate whose curve rises again above half its peak after falling below 40 % of it is not an
+artery), which was then checked on ISLES 2018 and was a small net gain there too.
 
 Reading it: against a second commercial package, on two more vendors, with no tuning, volumes agree with an ICC of
 about 0.9 and the 6 s boundary is the same as RAPID's and icobrain's; voxelwise overlap (Dice 0.67) is lower than
 against RAPID (0.85) because icobrain's maps are much more heavily smoothed than ours (visible in
 `results/isles24_10/montage.png`), the comparison crosses a registration, and the defaults were calibrated to RAPID.
-Per-subject results: `results/isles24_32/cases.csv`. The remaining subjects are the obvious next run; the dataset's
-own difficulty is also visible in the follow-up-lesion overlap, which is low for both tools.
+The widest unflagged disagreements (sub-stroke0074: 86 vs 19 mL; sub-stroke0019: 136 vs 52 mL) are over-calls on
+our side and the next thing to look at. Per-subject results with flags: `results/isles24_50/cases.csv`; the first
+32 (before the flags were recorded) remain in `results/isles24_32/`. The dataset's own difficulty is also visible in
+the follow-up-lesion overlap, which is low for both tools.
 
 ## Digital phantom
 
@@ -209,7 +221,7 @@ openperfusion/register.py       rigid CTP-to-NCCT registration (SimpleITK, optio
 openperfusion/io_dicom.py       DICOM 4D reader (+ synthetic DICOM writer for tests)
 openperfusion/motion.py         rigid in-plane motion correction
 openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`, `openperfusion dicom`
-scripts/                       ISLES sweeps and split-half validation; UniToBrain fetch and comparison
+scripts/                       ISLES sweeps and split-half validation; UniToBrain fetch and comparison; ISLES'24 fetch, run, QC, summary
 tests/                         phantom recovery, DICOM round trip, motion correction
 ```
 
