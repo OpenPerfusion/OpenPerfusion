@@ -221,7 +221,10 @@ two scans and the skull edges coincide after it, `results/inspect/sub-stroke0079
 calls 195 mL of Tmax > 6 s in tissue whose mean curve is indistinguishable from the normal-tissue curve (same
 arrival, same 24 s peak, `results/inspect/sub-stroke0079/inspect.png`); the follow-up infarct is 4.6 mL. Our 79 mL
 is the call the raw curves support. 0040 is a 16-slice, 10 mm acquisition against 0.8 mm NCCT slices (no rigid
-registration can do better than NCC 0.15 there); 0010 and 0037 are still to be looked at.
+registration can do better than NCC 0.15 there). 0010 and 0037 are the two whose headers were furthest off (the
+header alignment misses by 40 and 75 mm; the registration recovers both, `results/inspect/sub-stroke0010/` and
+`sub-stroke0037/registration.png`), their volumes agree within 15 mL, and what is left of the voxelwise
+disagreement is an 8-slice slab tilted 13 degrees against the NCCT and a 10 mm one: partial volume, not alignment.
 
 ## Digital phantom
 
