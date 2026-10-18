@@ -24,3 +24,23 @@ points against RAPID, where the arrival-weighted pick is right for thin slabs. T
 amplitude-first only when the pick peaks >= 8 s before the tissue or is < 1/2.5 of the vein; width bound follows
 the bolus) leave ISLES 2018 unchanged or better (kappa 0.78 -> 0.88) and fix four of the five ISLES'24 traps; the
 fifth, a split bolus, is flagged for review by the lead rule.
+
+# Heavier smoothing for weak acquisitions, ISLES 2018 (94 in-sample, v0.4.0 defaults otherwise)
+
+Motivated by ISLES'24 sub-stroke0109 and 0184, where the over-call is scattered small clusters in a low-enhancement
+acquisition that icobrain's heavier smoothing keeps below 6 s. Tested whether more spatial smoothing is free on the
+cases of ISLES 2018 that are as noisy (tissue SNR = median peak enhancement / pre-bolus noise SD per case):
+
+| stratum | n | Tmax>6 Dice 1.5 mm → 2.5 mm | core Dice | median abs. volume diff (mL) | DEFUSE-3 agreement |
+|---|---|---|---|---|---|
+| all | 94 | 0.844 → 0.792 | 0.757 → 0.704 | 5.1 → 5.2 | 0.96 → 0.87 |
+| SNR < 4 | 28 | 0.798 → 0.760 | 0.702 → 0.671 | 5.9 → 4.6 | 0.96 → 0.79 |
+| SNR < 3.5 | 12 | 0.703 → 0.679 | 0.588 → 0.527 | 6.8 → 3.8 | 0.92 → 0.83 |
+| SNR ≥ 4 | 66 | 0.864 → 0.806 | 0.776 → 0.717 | 4.7 → 5.3 | 0.95 → 0.91 |
+
+Rejected: 2.5 mm costs Dice and DEFUSE-3 agreement against RAPID in every stratum, the noisy cases included, so a
+smoothing that adapts to the acquisition's noise has nothing to gain on this reference. The two ISLES'24 cases stay
+as documented disagreements in a weak acquisition. (Tissue SNR itself does not separate them from ISLES 2018:
+sub-stroke0109 sits at 4.9 against an ISLES 2018 median of 5.0; the 10 ISLES 2018 cases with only two pre-bolus
+frames, as in sub-stroke0184, agree with RAPID at Dice 0.91, so neither a low-enhancement nor a short-baseline
+warning has a threshold that transfers.)
