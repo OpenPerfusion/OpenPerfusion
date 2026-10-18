@@ -226,6 +226,18 @@ header alignment misses by 40 and 75 mm; the registration recovers both, `result
 `sub-stroke0037/registration.png`), their volumes agree within 15 mL, and what is left of the voxelwise
 disagreement is an 8-slice slab tilted 13 degrees against the NCCT and a 10 mm one: partial volume, not alignment.
 
+The three widest unflagged Tmax > 6 disagreements that remain are of two kinds (`results/inspect/`). sub-stroke0109
+(230 vs 122 mL) and sub-stroke0184 (126 vs 64 mL) are weak acquisitions: arterial peaks of 127 and 117 HU against
+a cohort median of 200, tissue peaks of 11-13 HU, a vein smaller than the artery in one and a periodic artefact
+through the tail of every curve in the other. The extra volume on our side is scattered small clusters whose mean
+curve barely rises (3-4 HU in 0109); icobrain's heavier smoothing keeps those below 6 s, ours does not. A
+per-voxel enhancement gate was the obvious fix and was rejected because it costs core agreement with RAPID
+(`results/variants/`); smoothing that adapts to the acquisition's noise is the untested alternative, and a
+case-level low-enhancement warning in the QC verdict is the cheap one. sub-stroke0096 (272 vs 195 mL, a 291 HU
+bolus) is a boundary case: the 137 mL only we call sits 4 s behind the normal-tissue curve, which we read as 6-9 s
+and icobrain as 4-6 s, and the 59 mL only icobrain calls is a bright, late, high-CBV region, that is, veins. The
+first two argue for honesty about acquisition quality rather than for a different map.
+
 ## Digital phantom
 
 `openperfusion.phantom.make_phantom()` builds a Kudo-style phantom: a 7 × 7 grid of tiles spanning CBF 10–70 mL/100 g/min × MTT 4–16 s, one slice per tracer delay (0–3 s), exponential or box residue functions, an arterial block (partial-volumed to 70 %), a venous block (delayed, dispersed, same area), normal reference tissue (CBF 50 / MTT 4), a CSF block, skull and air. Curves are generated on a 0.05 s grid and sampled at 1 s, so the estimator sees realistic discretisation error. Noise is Gaussian in HU.
