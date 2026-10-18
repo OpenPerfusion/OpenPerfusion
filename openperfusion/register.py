@@ -41,22 +41,28 @@ def _to_sitk(img: nib.Nifti1Image, data: np.ndarray | None = None) -> "sitk.Imag
 
 
 def register_ctp_to_ref(ctp_img: nib.Nifti1Image, ctp_mean: np.ndarray, ref_img: nib.Nifti1Image,
-                        window=(0.0, 100.0), iterations: int = 200) -> "sitk.Transform":
+                        window=(0.0, 100.0), iterations: int = 200, init: str = "header") -> "sitk.Transform":
     """Rigid transform (fixed = reference CT, moving = CTP mean), initialised from the headers.
 
     Both images are windowed to brain soft tissue so skull and air do not dominate; the metric is
     Mattes mutual information on a 3-level pyramid. Returns a SimpleITK Euler3DTransform mapping
     fixed (reference) physical points to moving (CTP) physical points.
+
+    `init`: "header" starts from the identity in physical space (the headers already roughly agree, the
+    usual case); "centre" starts by aligning the two volumes' geometric centres, for the few subjects
+    whose headers put the volumes so far apart that they do not overlap at all (the metric then raises
+    "All samples map outside moving image buffer").
     """
     if sitk is None:
         raise ImportError("SimpleITK is required for registration: pip install SimpleITK")
     fixed = _to_sitk(ref_img, np.clip(np.asarray(ref_img.dataobj, np.float32), *window))
     moving = _to_sitk(ctp_img, np.clip(ctp_mean, *window))
     fixed = sitk.Cast(fixed, sitk.sitkFloat32); moving = sitk.Cast(moving, sitk.sitkFloat32)
-    tx = sitk.CenteredTransformInitializer(fixed, moving, sitk.Euler3DTransform(), sitk.CenteredTransformInitializerFilter.GEOMETRY)
-    # headers already roughly agree; start from identity-in-physical-space rather than centred geometry
-    tx = sitk.Euler3DTransform()
-    tx.SetCenter(fixed.TransformContinuousIndexToPhysicalPoint([(s - 1) / 2.0 for s in fixed.GetSize()]))
+    if init == "centre":
+        tx = sitk.Euler3DTransform(sitk.CenteredTransformInitializer(fixed, moving, sitk.Euler3DTransform(), sitk.CenteredTransformInitializerFilter.GEOMETRY))
+    else:
+        tx = sitk.Euler3DTransform()
+        tx.SetCenter(fixed.TransformContinuousIndexToPhysicalPoint([(s - 1) / 2.0 for s in fixed.GetSize()]))
     reg = sitk.ImageRegistrationMethod()
     reg.SetMetricAsMattesMutualInformation(numberOfHistogramBins=32)
     reg.SetMetricSamplingStrategy(reg.RANDOM); reg.SetMetricSamplingPercentage(0.2, seed=1)

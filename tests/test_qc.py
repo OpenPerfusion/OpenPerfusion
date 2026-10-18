@@ -45,6 +45,14 @@ def test_multipeak_curve_rejected(res):
     assert v["status"] == "reject" and any("multi-peak" in w for w in v["warnings"])
 
 
+def test_lead_rule(res):
+    r = copy.copy(res); r.aif = copy.copy(res.aif); r.aif.qc = dict(res.aif.qc)
+    r.aif.qc["aif_lead"] = 9.0
+    v = qc_verdict(r); assert v["status"] == "review" and any("before the whole-brain tissue" in w for w in v["warnings"])
+    r.aif.qc["aif_lead"] = 4.0; r.aif.qc["aif_reselected_lead"] = {"was_peak": 70.0, "was_ttp": 11.0}
+    v = qc_verdict(r); assert v["status"] == "ok" and any("replaced by a brighter artery" in w for w in v["warnings"])
+
+
 def test_motion_and_timing_warnings(res):
     class M: max_shift_mm = 7.0; theta = np.array([1.0, -6.5])
     v = qc_verdict(res, meta={"time_source": "instance_order"}, motion=M())

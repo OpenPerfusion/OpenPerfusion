@@ -119,14 +119,21 @@ def _build(name: str, imgs: dict, load_4d: bool, register: bool) -> dict:
                 a = np.clip(a[brain], 0, 100); b = np.clip(b[brain], 0, 100)
                 return float(np.corrcoef(a, b)[0, 1]) if a.std() > 0 and b.std() > 0 else 0.0
             n_hdr = resample_to(ncct, shape3, ctp_affine, order=1)
-            tx_try = register_ctp_to_ref(ctp, mean, ncct)
+            c0 = ncc(mean, n_hdr)
+            try:
+                tx_try = register_ctp_to_ref(ctp, mean, ncct); init = "header"
+            except RuntimeError:
+                # the headers put the two volumes so far apart that they do not overlap: start from the centres
+                tx_try = register_ctp_to_ref(ctp, mean, ncct, init="centre"); init = "centre"
             n_reg = resample_ref_to_ctp(ncct, ctp, tx_try)
-            c0, c1 = ncc(mean, n_hdr), ncc(mean, n_reg)
-            out["registration"] = {"method": "header", "ncc_header": round(c0, 3), "ncc_registered": round(c1, 3), **transform_summary(tx_try)}
+            c1 = ncc(mean, n_reg)
+            out["registration"] = {"method": "header", "ncc_header": round(c0, 3), "ncc_registered": round(c1, 3), "init": init, **transform_summary(tx_try)}
             if c1 > c0 + 0.02:
                 tx = tx_try; out["registration"]["method"] = "rigid"
         except ImportError:
             pass
+        except RuntimeError as e:                      # registration failed both ways: header alignment, flagged
+            out["registration"] = {"method": "header", "error": str(e).splitlines()[-1][:120]}
     def pull(img, order):
         if tx is None:
             return resample_to(img, shape3, ctp_affine, order=order)

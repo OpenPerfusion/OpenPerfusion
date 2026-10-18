@@ -15,7 +15,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from openperfusion.validate import summarize_cases
 
-FLAGS = ("aif_fallback", "aif_last_resort")
+FLAGS = ("aif_fallback", "aif_last_resort")          # the `reject`-class flags
+REVIEW_LEAD = 8.0                                       # `review`: arterial input peaking this far ahead of the tissue
 
 
 def block(df: pd.DataFrame) -> dict:
@@ -44,18 +45,25 @@ def main(d: Path):
     if (d / "qc.csv").exists():
         qc = pd.read_csv(d / "qc.csv").drop_duplicates("case")
         flagged = sorted(qc.loc[qc[list(FLAGS)].any(axis=1), "case"].tolist())
-        cases = cases.merge(qc[["case", *FLAGS, "aif_primary_weak", "aif_weak", "truncated", "aif_second_peak"]], on="case", how="left")
-        cases.to_csv(d / "cases.csv", index=False)
+        review = sorted(qc.loc[(qc.get("aif_lead", pd.Series(0, index=qc.index)).fillna(0) >= REVIEW_LEAD) & ~qc.case.isin(flagged), "case"].tolist()) if "aif_lead" in qc else []
+        extra = [c for c in ("aif_primary_weak", "aif_weak", "truncated", "aif_second_peak", "aif_lead", "aif_reselected_lead", "aif_reselected_vein") if c in qc]
+        new_cols = [c for c in (*FLAGS, *extra) if c not in cases.columns]          # harness rows may already carry the flags
+        if new_cols:
+            cases = cases.merge(qc[["case", *new_cols]], on="case", how="left")
+            cases.to_csv(d / "cases.csv", index=False)
+    else:
+        review = []
     kept = cases[~cases.case.isin(flagged)]
-    summ = {"all": block(cases), "excluding_flagged": block(kept), "flagged": flagged, "flag_rule": " or ".join(FLAGS)}
+    summ = {"all": block(cases), "excluding_flagged": block(kept), "excluding_flagged_and_review": block(kept[~kept.case.isin(review)]),
+            "flagged": flagged, "review": review, "flag_rule": " or ".join(FLAGS), "review_rule": f"aif_lead >= {REVIEW_LEAD}"}
     json.dump(summ, open(d / "summary.json", "w"), indent=1, default=float)
-    for name in ("all", "excluding_flagged"):
+    for name in ("all", "excluding_flagged", "excluding_flagged_and_review"):
         b = summ[name]
         print(f"{name:18s} n={b['n']:3d}  Tmax>6: ICC {b['hypo_icc']:.2f} bias {b['hypo_bias']:+.1f} LoA {b['hypo_loa'][0]:.0f}/{b['hypo_loa'][1]:+.0f} "
               f"Dice {b['hypo_dice_mean']:.2f} ({b['hypo_dice_median']:.2f})  core: ICC {b['core_icc']:.2f} bias {b['core_bias']:+.1f} "
               f"LoA {b['core_loa'][0]:.0f}/{b['core_loa'][1]:+.0f} Dice {b['core_dice_mean']:.2f}  r {b['r_cbf']:.2f}/{b['r_cbv']:.2f}/{b['r_tmax']:.2f}  "
               f"DEFUSE-3 {b['defuse3_agreement']:.2f}")
-    print("flagged:", flagged)
+    print("flagged:", flagged, "| review:", review)
 
 
 if __name__ == "__main__":

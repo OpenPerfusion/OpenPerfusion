@@ -15,12 +15,15 @@ from openperfusion.pipeline import PipelineConfig
 
 
 def parse_cfg(s: str) -> dict:
+    """key=value pairs separated by commas; a value may be a number, true/false/none, a string, or a
+    parenthesised tuple such as aif_weights=(2,-1,-1)."""
+    import ast, re
     out = {}
-    for kv in filter(None, s.split(",")):
-        k, v = kv.split("=")
+    for kv in filter(None, re.split(r",(?![^()]*\))", s)):
+        k, v = kv.split("=", 1); v = v.strip()
         try:
-            v = float(v) if "." in v or "e" in v.lower() else int(v)
-        except ValueError:
+            v = ast.literal_eval(v)
+        except (ValueError, SyntaxError):
             v = {"true": True, "false": False, "none": None}.get(v.lower(), v)
         out[k.strip()] = v
     return out

@@ -26,10 +26,14 @@ for col, (ours, ref, title) in enumerate((("hypo_ml_ours", "hypo_ml_ref", "Tmax 
     a = ax[0, col]; a.scatter(x[k], y[k], s=18, alpha=0.7); a.plot([0, lim], [0, lim], "k--", lw=1)
     if flagged.any():
         xf, yf = x[flagged], y[flagged]
+        n_off = 0
         for xi, yi, name in zip(xf, yf, d.case.values[flagged]):
-            a.scatter([xi], [min(yi, lim * 0.98)], s=30, color="tab:red", marker="^" if yi > lim else "o")
-            a.annotate(f"{name.replace('sub-stroke', '')}: {yi:.0f} mL" + (" (off scale)" if yi > lim else ""), (xi, min(yi, lim * 0.98)),
-                       xytext=(6, -4), textcoords="offset points", fontsize=8, color="tab:red")
+            off = yi > lim
+            a.scatter([xi], [min(yi, lim * 0.98)], s=30, color="tab:red", marker="^" if off else "o")
+            # off-scale points all sit on the top edge: stack their labels so they do not overlap
+            a.annotate(f"{name.replace('sub-stroke', '')}: {yi:.0f} mL" + (" (off scale)" if off else ""), (xi, min(yi, lim * 0.98)),
+                       xytext=(6, -4 - 11 * n_off), textcoords="offset points", fontsize=8, color="tab:red")
+            n_off += int(off)
     a.set_xlim(0, lim); a.set_ylim(0, lim)
     a.set_xlabel(ref_name); a.set_ylabel("OpenPerfusion")
     a.set_title(title + f", n = {k.sum()}" + (f" (+{flagged.sum()} flagged, red)" if flagged.any() else ""))

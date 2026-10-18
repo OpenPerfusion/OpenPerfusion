@@ -1,0 +1,112 @@
+{
+ "all": {
+  "n": 149,
+  "hypo_icc": 0.6334845586925586,
+  "hypo_bias": 11.970801576552482,
+  "hypo_loa": [
+   -123.39934140655387,
+   147.34094455965882
+  ],
+  "hypo_dice_mean": 0.6775602957255563,
+  "hypo_dice_median": 0.728631918537316,
+  "core_icc": 0.8786684036577068,
+  "core_bias": 2.9774711922053534,
+  "core_loa": [
+   -17.834110435698026,
+   23.789052820108733
+  ],
+  "core_dice_mean": 0.4223132533494097,
+  "core_dice_median": 0.46190323751514606,
+  "r_cbf": 0.8083853193109652,
+  "r_cbv": 0.7726789262634366,
+  "r_tmax": 0.6479738695247669,
+  "defuse3_agreement": 0.9328859060402684,
+  "defuse3_kappa": 0.6983805668016193,
+  "hypo_dice_t4": 0.514796120940991,
+  "hypo_dice_t5": 0.6255309565206164,
+  "hypo_dice_t6": 0.6749897065586093,
+  "hypo_dice_t7": 0.6537593745187172,
+  "hypo_dice_t8": 0.5893018861776007,
+  "dice_hypo_lesion_ours": 0.15795171320812904,
+  "dice_hypo_lesion_ref": 0.16875330362558913,
+  "dice_core_lesion_ours": 0.12360983807835182,
+  "dice_core_lesion_ref": 0.13319601726455962,
+  "registered": 112
+ },
+ "excluding_flagged": {
+  "n": 146,
+  "hypo_icc": 0.8726714024329195,
+  "hypo_bias": 5.692842060460323,
+  "hypo_loa": [
+   -62.77600349925828,
+   74.16168762017892
+  ],
+  "hypo_dice_mean": 0.6840690268796873,
+  "hypo_dice_median": 0.7311771911078679,
+  "core_icc": 0.9117522863891179,
+  "core_bias": 2.7277650919734633,
+  "core_loa": [
+   -14.85821224877278,
+   20.313742432719707
+  ],
+  "core_dice_mean": 0.4301775281288686,
+  "core_dice_median": 0.4894213612031608,
+  "r_cbf": 0.81106472412845,
+  "r_cbv": 0.775966021271658,
+  "r_tmax": 0.6571024605929009,
+  "defuse3_agreement": 0.9383561643835616,
+  "defuse3_kappa": 0.7214921576939382,
+  "hypo_dice_t4": 0.5180703858030005,
+  "hypo_dice_t5": 0.6311171348262969,
+  "hypo_dice_t6": 0.6816518419811465,
+  "hypo_dice_t7": 0.6600215807522147,
+  "hypo_dice_t8": 0.5943667164391623,
+  "dice_hypo_lesion_ours": 0.15893819990099178,
+  "dice_hypo_lesion_ref": 0.16730662964251053,
+  "dice_core_lesion_ours": 0.12422533434258826,
+  "dice_core_lesion_ref": 0.13111919748025916,
+  "registered": 110
+ },
+ "excluding_flagged_and_review": {
+  "n": 146,
+  "hypo_icc": 0.8726714024329195,
+  "hypo_bias": 5.692842060460323,
+  "hypo_loa": [
+   -62.77600349925828,
+   74.16168762017892
+  ],
+  "hypo_dice_mean": 0.6840690268796873,
+  "hypo_dice_median": 0.7311771911078679,
+  "core_icc": 0.9117522863891179,
+  "core_bias": 2.7277650919734633,
+  "core_loa": [
+   -14.85821224877278,
+   20.313742432719707
+  ],
+  "core_dice_mean": 0.4301775281288686,
+  "core_dice_median": 0.4894213612031608,
+  "r_cbf": 0.81106472412845,
+  "r_cbv": 0.775966021271658,
+  "r_tmax": 0.6571024605929009,
+  "defuse3_agreement": 0.9383561643835616,
+  "defuse3_kappa": 0.7214921576939382,
+  "hypo_dice_t4": 0.5180703858030005,
+  "hypo_dice_t5": 0.6311171348262969,
+  "hypo_dice_t6": 0.6816518419811465,
+  "hypo_dice_t7": 0.6600215807522147,
+  "hypo_dice_t8": 0.5943667164391623,
+  "dice_hypo_lesion_ours": 0.15893819990099178,
+  "dice_hypo_lesion_ref": 0.16730662964251053,
+  "dice_core_lesion_ours": 0.12422533434258826,
+  "dice_core_lesion_ref": 0.13111919748025916,
+  "registered": 110
+ },
+ "flagged": [
+  "sub-stroke0016",
+  "sub-stroke0028",
+  "sub-stroke0187"
+ ],
+ "review": [],
+ "flag_rule": "aif_fallback or aif_last_resort",
+ "review_rule": "aif_lead >= 8.0"
+}

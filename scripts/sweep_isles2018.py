@@ -67,7 +67,8 @@ def run_config(cases, cfg: PipelineConfig, tmax_grid=(4, 5, 6, 7, 8, 9, 10), cor
                      # the pipeline's own QC flags, so a report can be given with and without the flagged cases
                      "aif_primary_weak": bool(q.get("aif_primary_weak", False)), "aif_fallback": bool(q.get("aif_fallback", False)),
                      "aif_last_resort": bool(q.get("aif_last_resort", False)), "aif_weak": bool(q.get("aif_weak", False)),
-                     "truncated": bool(q.get("truncated", False)),
+                     "truncated": bool(q.get("truncated", False)), "aif_lead": q.get("aif_lead"),
+                     "aif_reselected_lead": bool(q.get("aif_reselected_lead", False)), "aif_reselected_vein": bool(q.get("aif_reselected_vein", False)),
                      "seconds": res.qc["seconds"]})
         print(f"{d['case']}: r_tmax={cmp.get('r_tmax', float('nan')):.2f} hypo {cmp['hypo_ml_ours']:.0f}/{cmp['hypo_ml_ref']:.0f} dice {cmp['dice_hypo']:.2f} core {cmp['core_ml_ours']:.0f}/{cmp['core_ml_ref']:.0f} {res.qc['seconds']}s", flush=True)
         del d

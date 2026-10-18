@@ -151,7 +151,7 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
                    vof_min_transit: float = 2.0, truncation_frac: float = 0.3,
                    pvc_max: float = 2.5, aif_min_peak: float = 15.0, arrival_noise_k: float = 4.0,
                    aif_lead: float = 2.0, max_width: float = 15.0, snr_min: float = 6.0,
-                   max_second_peak: float = 0.5) -> AifResult:
+                   max_second_peak: float = 0.5, amp_frac: float = 0.25, max_lead: float = 8.0) -> AifResult:
     """Select AIF (and VOF) from a (X,Y,Z,T) concentration array within `mask`.
 
     `arrival_noise_k`: each voxel's arrival threshold is at least this many standard deviations of
@@ -163,6 +163,13 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     `snr_min`: a candidate's peak must be at least this many times its own pre-bolus noise SD.
     `max_second_peak`: largest later rise (as a fraction of the peak, after the curve has fallen below 40 %
     of it) accepted for a candidate; recirculation is 0.2-0.35.
+    `max_lead` (s): an arterial curve normally peaks 2-5 s before the whole-brain tissue curve (median 3 s on
+    ISLES 2018 and ISLES'24, 75th percentile 4 s). When the primary pick peaks `max_lead` or more before the
+    tissue, it is usually not the cerebral arterial input (an early skull-base vessel or a small early cluster
+    beside brighter arteries, a test bolus, the first slug of a split bolus): the selection is repeated among
+    brighter curves whose lead is below `max_lead`, amplitude first, and the brighter of the two is kept. On
+    ISLES'24 this lead separated all seven slab-wide over-calls (lead 8-15 s) from the other 142 subjects
+    (lead <= 7 s). 0 disables it.
     """
     X, Y, Z, T = conc.shape
     idx = np.argwhere(mask)
@@ -191,7 +198,11 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     # flicker or a shuttle-registration artefact, not an artery (ISLES'24 sub-stroke0028: a 300 HU
     # "AIF" with three peaks 16 s apart turned the whole slab into Tmax > 6)
     second = second_peak_fraction(med)
-    shape_ok = ((f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= max_width) & (f.peak >= 0.7 * raw_peak)
+    # the width bound follows the bolus: with a slow, dispersed injection (ISLES'24 sub-stroke0113: tissue curve
+    # 20 s wide) the arteries are 20-25 s wide too, and a fixed 15 s bound leaves only a narrow early spike
+    tissue_width = float(curve_features(mean_curve[None], dt).width[0])
+    max_width_eff = max(max_width, 0.9 * tissue_width)
+    shape_ok = ((f.peak > 0) & (cmin > -0.3 * f.peak) & (f.width >= 3 * dt) & (f.width <= max_width_eff) & (f.peak >= 0.7 * raw_peak)
                 & (f.peak >= snr_min * np.maximum(noise, 1.0)) & (second <= max_second_peak))
     # primary window: anchored on the tissue arrival (validated on ISLES 2018)
     # arteries peak before the tissue does; a curve peaking after the tissue mean is venous
@@ -204,9 +215,10 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     k1, k2, k3 = weights
     shape3d = np.zeros(mask.shape, bool); shape3d[tuple(idx.T)] = shape_ok
 
-    def _pick(cand, min_sz):
+    def _pick(cand, min_sz, w=None):
+        w1, w2, w3 = w if w is not None else (k1, k2, k3)
         cost = np.full(len(curves), -np.inf, np.float32)
-        cost[cand] = k1 * _z(f.peak[cand]) + k2 * _z(f.arrival[cand]) + k3 * _z(f.width[cand])
+        cost[cand] = w1 * _z(f.peak[cand]) + w2 * _z(f.arrival[cand]) + w3 * _z(f.width[cand])
         ctop = np.percentile(cost[cand], top_percentile)
         top = cost >= ctop
         top3d = np.zeros(mask.shape, bool); top3d[tuple(idx[top].T)] = True
@@ -218,7 +230,10 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     # ---- primary: tallest plausible curves (large arteries, well above tissue enhancement) ----
     pk = np.where(plausible, f.peak, 0)
     pk_all = f.peak
-    thr = max(np.percentile(pk, candidate_percentile), 0.25 * np.percentile(pk, 99.9))
+    # amplitude bar for the primary pool: a fraction of the brightest plausible curves' peak, so that a
+    # large population of early, low-amplitude curves (skull-base vessels, sub-stroke0163's 70 HU cluster
+    # beside 300 HU arteries) cannot win on arrival alone
+    thr = max(np.percentile(pk, candidate_percentile), amp_frac * np.percentile(pk, 99.9))
     cand = plausible & (pk >= thr)
     if cand.sum() < 2 * min_cluster:
         cand = plausible & (pk >= np.percentile(pk, candidate_percentile))
@@ -229,6 +244,20 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
     else:
         aif_mask = np.zeros(mask.shape, bool); aif_raw = np.zeros(T, np.float32)
     fa = curve_features(aif_raw[None], dt)
+    # ---- lead check: an arterial input that peaks far ahead of the tissue is usually the wrong vessel ----
+    if max_lead > 0 and aif_mask.sum() > 0 and (ttp_tissue - float(fa.ttp[0])) >= max_lead:
+        later = plausible & (f.ttp > ttp_tissue - max_lead)
+        if later.sum() >= min_cluster:
+            pk2 = f.peak[later]
+            cand2 = later & (f.peak >= max(np.percentile(pk2, candidate_percentile), 0.5 * np.percentile(pk2, 99.9)))
+            if cand2.sum() >= min_cluster:
+                m2 = _pick(cand2, min_cluster, w=(2.0, -1.0, -1.0))          # amplitude first among the later curves
+                a2 = conc[m2].mean(axis=0)
+                if a2.max() >= 0.8 * aif_raw.max():
+                    qc["aif_reselected_lead"] = {"was_peak": float(aif_raw.max()), "was_ttp": float(fa.ttp[0])}
+                    aif_mask, aif_raw = m2, a2
+                    fa = curve_features(aif_raw[None], dt)
+    qc["aif_lead"] = float(ttp_tissue - float(fa.ttp[0]))
     # ---- fallback: thin slabs often hold no large artery. If the primary pick is weak or does
     # not lead the tissue peak, search a wider pool for small, early, narrow (partial-volumed) arteries,
     # weighting timing over amplitude, and accept 2-voxel clusters. ----
@@ -291,8 +320,25 @@ def select_aif_vof(conc: np.ndarray, mask: np.ndarray, dt: float,
                 auc_v = np.trapezoid(vof, dx=dt)
                 if auc_a > 0 and auc_v > auc_a:
                     k_av = float(auc_v / auc_a)
-                # a partial-volume factor beyond ~2.5 means the "artery" is not an artery (or the
-                # "vein" is not a vein); do not scale by it, flag it instead
+                # a partial-volume factor beyond ~2.5 means the "artery" is not an artery (or the "vein" is not
+                # a vein). The vein then anchors the amplitude: if plausible arterial curves exist with at least
+                # vof_peak / pvc_max of enhancement, the arterial pick is repeated among them, amplitude first
+                # (ISLES'24 sub-stroke0163: a 70 HU early cluster chosen beside 300 HU arteries, vein 245 HU).
+                # Otherwise the factor is not applied and the case is flagged.
+                if k_av > pvc_max:
+                    strong = plausible & (f.peak >= float(vof.max()) / pvc_max)
+                    if strong.sum() >= min_cluster:
+                        m2 = _pick(strong, min_cluster, w=(2.0, -1.0, -1.0))
+                        a2 = conc[m2].mean(axis=0)
+                        if a2.max() > aif_raw.max():
+                            qc["aif_reselected_vein"] = {"was_peak": float(aif_raw.max()), "k_av_was": k_av}
+                            aif_mask, aif_raw = m2, a2
+                            aif_arrival = float(curve_features(aif_raw[None], dt).arrival[0])
+                            auc_a = np.trapezoid(aif_raw, dx=dt)
+                            k_av = float(auc_v / auc_a) if auc_a > 0 and auc_v > auc_a else 1.0
+                            qc.update({"n_aif_voxels": int(aif_mask.sum()), "aif_peak": float(aif_raw.max()),
+                                       "aif_ttp": float(curve_features(aif_raw[None], dt).ttp[0]),
+                                       "aif_lead": float(ttp_tissue - float(curve_features(aif_raw[None], dt).ttp[0]))})
                 if k_av > pvc_max:
                     qc["k_av_rejected"] = k_av
                     k_av = 1.0

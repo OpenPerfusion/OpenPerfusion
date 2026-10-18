@@ -28,6 +28,9 @@ class PipelineConfig:
     # AIF / VOF
     pvc: bool = True
     select_vof: bool = True
+    aif_weights: tuple = (1.0, -3.5, -1.0)   # cost weights for z(peak), z(arrival), z(width) in the arterial pick
+    aif_amp_frac: float = 0.25               # primary pool: peak >= this fraction of the brightest plausible curves
+    aif_max_lead: float = 8.0                # re-select when the AIF peaks this many seconds or more before the tissue
     # deconvolution
     method: str = "bcsvd"          # bcsvd | osvd | fourier  (bcsvd/0.10 validated on ISLES 2018)
     lam: float = 0.10              # bcsvd truncation
@@ -70,14 +73,15 @@ def run_pipeline(hu4d: np.ndarray, dt: float, voxel_size, config: PipelineConfig
                              open_radius=max(1, int(round(cfg.mask_open_mm / dx))), erode=max(1, int(round(cfg.mask_erode_mm / dx))))
     # pass 1: provisional baseline from the whole-brain curve; AIF from unsmoothed concentration
     conc_raw, n_base, baseline = concentration_from_hu(hu4d, mask)
-    aif = select_aif_vof(conc_raw, mask, dt, select_vof=cfg.select_vof, pvc=cfg.pvc)
+    aif_kw = dict(select_vof=cfg.select_vof, pvc=cfg.pvc, weights=tuple(cfg.aif_weights), amp_frac=cfg.aif_amp_frac, max_lead=cfg.aif_max_lead)
+    aif = select_aif_vof(conc_raw, mask, dt, **aif_kw)
     # pass 2: baseline = frames before the AIF's own arrival (10 % of its peak), then re-select
     arr_idx = int(round(curve_features(aif.aif_raw[None], dt, frac=0.10).arrival[0] / dt))
     n_base2 = max(2, min(arr_idx - 1, hu4d.shape[-1] - 10))
     if n_base2 != n_base:
         n_base = n_base2
         conc_raw, _, baseline = concentration_from_hu(hu4d, mask, n_baseline=n_base)
-        aif = select_aif_vof(conc_raw, mask, dt, select_vof=cfg.select_vof, pvc=cfg.pvc)
+        aif = select_aif_vof(conc_raw, mask, dt, **aif_kw)
     conc, _, _ = concentration_from_hu(hu4d, mask, n_baseline=n_base, spatial_sigma=cfg.spatial_sigma_mm / dx,
                                        temporal_sigma=cfg.temporal_sigma)
     kw = {"bcsvd": dict(lam=cfg.lam), "osvd": dict(oi_threshold=cfg.oi_threshold), "fourier": dict(pr=cfg.pr)}[cfg.method]

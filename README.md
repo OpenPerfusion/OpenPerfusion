@@ -12,7 +12,7 @@ The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; Open
 
 1. **Masking** — soft-tissue brain mask from the pre-contrast frames (HU window, opening, largest component per slice, hole fill, edge erosion).
 2. **Concentration** — pre-bolus baseline chosen from the *arterial* arrival (brightest 0.5 % of voxels), subtracted per voxel; optional in-plane and temporal Gaussian smoothing.
-3. **AIF / VOF** — automatic, after Straka, Albers & Bammer (JMRI 2010): per-voxel peak height, arrival (searched backwards from the peak, robust to noise), FWHM; cost `1.0·z(h) − 3.5·z(a) − 1.0·z(w)`; best spatially connected cluster, grown to the vessel footprint. VOF = tall, late cluster; partial-volume correction `k_av = AUC_v / AUC_a`, skipped (and flagged) if the venous curve is truncated.
+3. **AIF / VOF** — automatic, after Straka, Albers & Bammer (JMRI 2010): per-voxel peak height, arrival (searched backwards from the peak, robust to noise), FWHM; cost `1.0·z(h) − 3.5·z(a) − 1.0·z(w)`; best spatially connected cluster, grown to the vessel footprint. Candidates must pass a single-bolus test and a noise-relative amplitude floor; a pick that peaks ≥ 8 s before the whole-brain tissue curve, or carries less than 1/2.5 of the venous area, is re-selected amplitude-first among brighter curves (the ISLES'24 traps, below). VOF = tall, late cluster; partial-volume correction `k_av = AUC_v / AUC_a`, skipped (and flagged) if the venous curve is truncated.
 4. **Deconvolution** — three delay-insensitive (circular, zero-padded) engines:
    `bcsvd` (block-circulant SVD, fixed truncation; Wu 2003), `osvd` (per-voxel truncation by oscillation index; Wu 2003; default), `fourier` (Wiener-regularised frequency division, the RAPID formulation in Straka 2010).
 5. **Maps** — CBF (mL/100 g/min), CBV (mL/100 g), MTT (s, central volume), Tmax (s, parabolic sub-sample peak), TTP.
@@ -51,12 +51,13 @@ translation-only fit is already near-perfect, so a 512 × 512 × 16-slice × 50-
 ### QC verdict
 
 Every run ends with a verdict (`openperfusion.qc.qc_verdict`; `status` and `warnings` at the top of
-`summary.json`): `ok`, `review` (maps produced, but a fallback arterial input was used, the acquisition was short,
-the head moved more than 5 mm / 5°, or frame timing had to be assumed; a truncated or missing venous curve is
+`summary.json`): `ok`, `review` (maps produced, but a fallback arterial input was used, the arterial input peaks
+8 s or more before the tissue, the acquisition was short, the head moved more than 5 mm / 5°, or frame timing had
+to be assumed; a truncated or missing venous curve is
 reported but does not change the verdict, since it only switches off the partial-volume correction), or
 `reject` (no plausible arterial input: last-resort pick, peak below 15 HU, or an arterial curve that rises again
 after the bolus, as in a jog-mode artefact). On ISLES'24 the `reject` rule is the difference between a Tmax > 6 s
-ICC of 0.45 and 0.89 against icobrain cva; a deployed system should refuse a `reject` study with its warning rather
+ICC of 0.63 and 0.87 against icobrain cva on 149 subjects; a deployed system should refuse a `reject` study with its warning rather
 than report through it. The same flags are recorded per case by the validation harness, so every dataset result
 below is reported with and without the flagged cases.
 
@@ -123,7 +124,7 @@ with sampling is a question for the paired cohort.
 
 ![truncation vs native sampling on the phantom](results/phantom_sampling/sampling.png)
 
-## ISLES'24: Siemens and Philips scanners, icobrain cva as the reference (50 subjects)
+## ISLES'24: Siemens and Philips scanners, icobrain cva as the reference (all 149 subjects)
 
 [ISLES'24](https://pubs.rsna.org/doi/10.1148/ryai.250603) has 149 training subjects from two centres on Siemens
 (Somatom Force, Xcite, AS+) and Philips (Brilliance 64, Ingenuity) scanners, with the 4D CTP (co-registered,
@@ -133,58 +134,72 @@ Hugging Face mirror, resumably; `openperfusion/io_isles2024.py` loads a subject 
 shape as the ISLES 2018 loader, so the same harness runs (`scripts/run_isles2024.py --parquet`).
 
 The maps live on the NCCT grid and the CTP on its own, and for some subjects the header alignment between the two
-is off by millimetres to centimetres (sub-stroke0010: 37 mm), so the loader refines it with a rigid registration of
-the CTP pre-contrast mean to the NCCT (`openperfusion/register.py`, SimpleITK, mutual information) and keeps the
-registered alignment when it improves the brain-window correlation (40 of 50 subjects).
+is off by millimetres to centimetres (sub-stroke0010: 37 mm; two subjects' headers put the volumes so far apart
+that they do not overlap and the registration starts from the volume centres instead), so the loader refines it
+with a rigid registration of the CTP pre-contrast mean to the NCCT (`openperfusion/register.py`, SimpleITK, mutual
+information) and keeps the registered alignment when it improves the brain-window correlation (112 of 149).
 
-Every run is reported two ways: all subjects, and excluding those the pipeline itself flagged (`aif_fallback` or
-`aif_last_resort`, i.e. the primary AIF search failed and a weaker fallback was used). `scripts/isles2024_qc.py`
-records the flags per subject and `scripts/isles2024_summary.py` writes both summaries; the harness rows now carry
-the flags directly.
+Every run is reported two ways: all subjects, and excluding those the pipeline itself marks `reject`
+(`aif_fallback` or `aif_last_resort`: the primary arterial search failed and a weaker fallback was used). The
+harness rows carry the flags; `scripts/isles2024_summary.py` writes both summaries.
 
-| metric, 50 subjects, defaults as validated on ISLES 2018 (no tuning) | all 50 | excluding the 2 flagged |
+| metric, 149 subjects, defaults as validated on ISLES 2018 (no tuning) | all 149 | excluding the 3 flagged |
 |---|---|---|
-| Tmax > 6 s volume | ICC 0.45, bias +19 mL, LoA -166 to +204 mL | ICC 0.89, bias +6 mL, LoA -58 to +69 mL |
-| Tmax > 6 s Dice, mean (median) | 0.65 (0.69) | 0.67 (0.70) |
-| rCBF < 30 % core volume | ICC 0.75, bias +2 mL, LoA -19 to +24 mL, Dice 0.32 | ICC 0.94, bias +1 mL, LoA -9 to +11 mL, Dice 0.33 |
-| voxelwise r, CBF / CBV / Tmax | 0.76 / 0.72 / 0.59 | 0.77 / 0.73 / 0.60 |
-| DEFUSE-3 target-profile agreement | 0.94 | 0.96 |
-| best-matching Tmax threshold for icobrain's > 6 s boundary | 6 s (Dice 0.65; 5 s 0.60, 7 s 0.64) | 6 s (Dice 0.66; 5 s 0.61, 7 s 0.65) |
-| hypoperfusion vs follow-up infarct, Dice | ours 0.15, icobrain 0.16 | ours 0.15, icobrain 0.16 |
+| Tmax > 6 s volume | ICC 0.63, bias +12 mL, LoA -123 to +147 mL | ICC 0.87, bias +6 mL, LoA -63 to +74 mL |
+| Tmax > 6 s Dice, mean (median) | 0.68 (0.73) | 0.68 (0.73) |
+| rCBF < 30 % core volume | ICC 0.88, bias +3 mL, LoA -18 to +24 mL, Dice 0.42 | ICC 0.91, bias +3 mL, LoA -15 to +20 mL, Dice 0.43 |
+| voxelwise r, CBF / CBV / Tmax | 0.81 / 0.77 / 0.65 | 0.81 / 0.78 / 0.66 |
+| DEFUSE-3 target-profile agreement | 0.93 | 0.94 |
+| best-matching Tmax threshold for icobrain's > 6 s boundary | 6 s (Dice 0.68; 5 s 0.63, 7 s 0.65) | 6 s (Dice 0.68; 5 s 0.63, 7 s 0.66) |
+| hypoperfusion vs follow-up infarct, Dice | ours 0.16, icobrain 0.17 | ours 0.16, icobrain 0.17 |
 
-![OpenPerfusion vs icobrain cva, 50 ISLES'24 subjects](results/isles24_50/agreement_50.png)
+![OpenPerfusion vs icobrain cva, 149 ISLES'24 subjects](results/isles24_149/agreement_149.png)
 
-The two flagged subjects: sub-stroke0028 (8 x 10 mm slices) carries a periodic artefact through the whole slab:
-every curve, tissue included, rises every ~15 s, which looks like a jog-mode acquisition resampled with imperfect
-registration. Its "arteries" fail the single-bolus test, the fallback AIF fails it too (second rise 61 % of the
-peak), and the result is a slab-wide Tmax > 6 (712 mL against icobrain's 77 mL). In sub-stroke0016 the primary
-AIF search failed its plausibility checks and the fallback settled on a 41 HU curve; the pick looks arterial and
-its volumes agree (188 vs 153 mL, core 10 vs 9), but it is flagged all the same because the flag is about the
-evidence, not the outcome. One case is the difference
-between the two columns for Tmax > 6, which is the argument for honouring the QC flags: a deployed system would
-refuse sub-stroke0028 with a warning rather than report it. That case prompted the multi-peak rejection now in the
-AIF selector (a candidate whose curve rises again above half its peak after falling below 40 % of it is not an
-artery), which was then checked on ISLES 2018 and was a small net gain there too.
+The three flagged subjects: sub-stroke0028 (8 x 10 mm slices) carries a periodic artefact through the whole slab,
+every curve rising every ~15 s, like a jog-mode acquisition resampled with imperfect registration; no curve passes
+the single-bolus test and the result is 712 mL of Tmax > 6 against icobrain's 77. sub-stroke0187 is a split bolus
+(two arterial peaks 10 s apart, the tissue curve with two shoulders); the pipeline's pick leads the tissue peak by
+15 s and it goes to the fallback (531 vs 158 mL). sub-stroke0016's primary search failed its plausibility checks
+and a 41 HU fallback was used; its volumes agree anyway (97 vs 153 mL), but the flag is about the evidence. Three
+cases are the difference between the two columns for Tmax > 6, which is the argument for honouring the QC flags: a
+deployed system refuses them with the warning rather than reporting through them. Per-subject results with flags:
+`results/isles24_149/cases.csv`.
 
-Reading it: against a second commercial package, on two more vendors, with no tuning, volumes agree with an ICC of
-about 0.9 and the 6 s boundary is the same as RAPID's and icobrain's; voxelwise overlap (Dice 0.67) is lower than
-against RAPID (0.85) because icobrain's maps are much more heavily smoothed than ours (visible in
-`results/isles24_10/montage.png`), the comparison crosses a registration, and the defaults were calibrated to RAPID.
-Per-subject results with flags: `results/isles24_50/cases.csv`; the first 32 (before the flags were recorded) remain in
-`results/isles24_32/`. The dataset's own difficulty is also visible in the follow-up-lesion overlap, which is low for
-both tools.
+### What the second 99 subjects taught the arterial selector
 
-The two widest unflagged disagreements (sub-stroke0074: 86 vs 19 mL; sub-stroke0019: 136 vs 52 mL) were taken apart
-(`scripts/isles2024_inspect.py`, `results/inspect/`): in both, the extra Tmax > 6 s tissue is bilateral deep white
-matter with low CBV (0.7 x the brain median) and low enhancement, where our Tmax runs 6-8 s and icobrain's about 4 s.
-An audit of the 6 s boundary on every subject of both datasets (`scripts/tmax_tail_audit.py`, `results/audit/`)
-shows this is a difference between the references, not a fault that can be fixed against RAPID: against RAPID our
-normal-tissue Tmax tail matches (99th percentile 6.1 vs 6.0 s; we under-call more than we over-call, 4 vs 17 mL per
-case), whereas icobrain's maps are smoothed until their tail is clipped (99th percentile 5.7 vs our 8.2 s) and
-icobrain calls more hypoperfusion than we do in 38 of 48 unflagged subjects (median 53 mL only-icobrain vs 27 mL
-only-ours). A per-voxel enhancement-SNR gate that removes such tissue (`PipelineConfig.snr_min_tissue`, off by
-default) was tried and rejected: on ISLES 2018 it costs Tmax > 6 Dice 0.85 -> 0.83 and core Dice 0.77 -> 0.69 at
-2 x noise, and more at 3 x, because the low-enhancement tissue it removes is tissue RAPID also calls.
+The first 50 subjects agreed with icobrain at ICC 0.89; the next 99 brought the all-subject ICC down to 0.36
+(`results/isles24_149_first_selector/`), and the cause was seven slab-wide over-calls, not noise. Taking them apart
+(`scripts/isles2024_inspect.py`, `results/inspect/`) showed one mechanism in five of them: the arterial selector,
+whose cost weights arrival three and a half times as heavily as amplitude (the right choice on ISLES 2018's thin
+slabs), chose an early, dimmer population over the cerebral arteries once the slab reached the skull base:
+sub-stroke0163 a 1,000-voxel 70 HU cluster peaking 8 s before the tissue, beside 300 HU arteries peaking 2 s before
+it (830 mL of Tmax > 6 against icobrain's 8); sub-stroke0086 and 0188 a 150 HU skull-base vessel 8 s ahead of the
+tissue beside 200-260 HU arteries 2-4 s ahead; sub-stroke0113 a narrow 156 HU spike in a slow, dispersed bolus whose
+real arteries were 25 s wide and excluded by a fixed 15 s width bound. In every one the normal-tissue Tmax read
+6-8 s instead of 2 s, because every Tmax is measured from the arterial input.
+
+One number separated all seven from the other 142: the lead of the arterial peak over the whole-brain tissue peak,
+8-15 s in the seven and 1-7 s in the rest (median 3 s; the same distribution on ISLES 2018, where one case has a
+lead of 13 s). Three targeted rules follow (`openperfusion/aif.py`, all on by default):
+
+* lead rule: when the pick peaks >= 8 s before the tissue, the selection is repeated among brighter curves whose
+  lead is below 8 s, amplitude first, and the later pick replaces the first when it is at least 80 % as bright
+  (`aif_max_lead`);
+* vein rule: when the venous curve has more than 2.5 x the arterial area (the partial-volume factor the pipeline
+  already refused to apply), the selection is repeated among curves with at least vein / 2.5 of enhancement;
+* width rule: the arterial width bound follows the bolus (0.9 x the whole-brain curve's FWHM when that exceeds 15 s).
+
+Four of the five are fixed (0086: 154 vs 108 mL; 0113: 183 vs 180; 0163: 11 vs 8; 0188: 122 vs 51), and the QC
+verdict now marks any remaining lead >= 8 s for review, which is where the split bolus lands. Re-weighting the
+cost itself was tried first and rejected: it fixes the same cases but costs 1-2 Dice points and up to 6 kappa
+points against RAPID (`results/variants/README.md`); the targeted rules leave ISLES 2018 unchanged or better
+(Tmax > 6 ICC 0.953 -> 0.955, Dice 0.846 -> 0.844, core ICC 0.982 -> 0.984, DEFUSE-3 kappa 0.777 -> 0.881) and
+change the Tmax > 6 volume by more than 10 mL in 12 of the 149 ISLES'24 subjects. The audit of the 6 s boundary on
+every subject (`scripts/tmax_tail_audit.py`, `results/audit/`) stands: against RAPID our normal-tissue Tmax tail
+matches (99th percentile 6.1 vs 6.0 s); icobrain's is clipped by smoothing (5.7 vs our 8.2 s) and it calls more
+hypoperfusion than we do in most subjects, so voxel overlap against it (Dice 0.68) is lower than against RAPID
+(0.85) for reasons that are not ours to fix. An enhancement-SNR gate (`PipelineConfig.snr_min_tissue`, off) was
+tried for that and rejected on ISLES 2018.
 
 ## Digital phantom
 

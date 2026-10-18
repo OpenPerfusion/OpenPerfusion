@@ -7,7 +7,8 @@ Three verdicts:
 
     ok      - nothing to report
     review  - the maps were produced but something about the study deserves a look before they are trusted
-              (fallback arterial input, short acquisition, large motion, assumed frame timing)
+              (fallback arterial input, arterial input peaking >= 8 s before the tissue, short acquisition,
+              large motion, assumed frame timing)
     reject  - the pipeline could not find a usable arterial input; the maps should not be reported
 
 On ISLES'24 the one subject the `reject` rule catches (sub-stroke0028, a slab-wide periodic artefact) is the
@@ -21,7 +22,7 @@ import numpy as np
 from .aif import second_peak_fraction
 
 
-def qc_verdict(res, meta: dict | None = None, motion=None, max_second_peak: float = 0.5) -> dict:
+def qc_verdict(res, meta: dict | None = None, motion=None, max_second_peak: float = 0.5, max_lead: float = 8.0) -> dict:
     """`res`: PipelineResult; `meta`: DICOM reader metadata (optional); `motion`: MotionResult (optional)."""
     q = res.aif.qc
     warnings, status = [], "ok"
@@ -44,6 +45,15 @@ def qc_verdict(res, meta: dict | None = None, motion=None, max_second_peak: floa
                         "Check the AIF location before trusting the maps."); raise_to("review")
     # the two venous conditions only switch off the partial-volume correction: absolute CBF/CBV move, the relative
     # core and Tmax volumes do not, so they are reported but do not change the verdict
+    lead = q.get("aif_lead")
+    if lead is not None and lead >= max_lead:
+        warnings.append(f"the arterial input peaks {lead:.0f} s before the whole-brain tissue curve (normal 2-5 s): it may be an early "
+                        "skull-base vessel, a test bolus, or the first slug of a split bolus, and every Tmax is shifted by the "
+                        "difference. Check the AIF location before trusting the maps."); raise_to("review")
+    for key, what in (("aif_reselected_lead", "it peaked too far ahead of the tissue"), ("aif_reselected_vein", "it was far smaller than the venous curve")):
+        if q.get(key):
+            was = q[key]
+            warnings.append(f"the first arterial pick ({was.get('was_peak', 0):.0f} HU) was replaced by a brighter artery because {what}.")
     if q.get("truncated"):
         warnings.append(f"venous curve truncated (tail {q.get('vof_tail_fraction', float('nan')):.0%} of peak at the last frame): "
                         "partial-volume correction skipped; absolute CBF/CBV scale uncertain, relative core (rCBF) and Tmax unaffected.")
@@ -63,4 +73,6 @@ def qc_verdict(res, meta: dict | None = None, motion=None, max_second_peak: floa
             warnings.append(f"shuttle-mode acquisition (native interval {meta.get('native_dt', '?')} s) resampled to a uniform grid; "
                             "absolute CBF may read ~5-7 % low (phantom); relative core unaffected.")
     return {"status": status, "warnings": warnings, "aif_peak_hu": aif_peak, "aif_second_peak_fraction": second,
-            "flags": {k: bool(q.get(k, False)) for k in ("aif_primary_weak", "aif_fallback", "aif_last_resort", "aif_weak", "truncated")}}
+            "aif_lead_s": lead,
+            "flags": {k: bool(q.get(k, False)) for k in ("aif_primary_weak", "aif_fallback", "aif_last_resort", "aif_weak", "truncated",
+                                                          "aif_reselected_lead", "aif_reselected_vein")}}

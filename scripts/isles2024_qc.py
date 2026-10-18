@@ -17,7 +17,7 @@ from openperfusion.io_isles2024 import find_shards, load_subject_from_parquet
 from openperfusion.pipeline import PipelineConfig, run_pipeline
 from openperfusion.aif import second_peak_fraction
 
-FLAGS = ("aif_primary_weak", "aif_fallback", "aif_last_resort", "aif_weak", "truncated")
+FLAGS = ("aif_primary_weak", "aif_fallback", "aif_last_resort", "aif_weak", "truncated", "aif_reselected_lead", "aif_reselected_vein")
 
 
 def main(data: Path, out: Path, budget: float):
@@ -41,7 +41,7 @@ def main(data: Path, out: Path, budget: float):
             q = res.aif.qc
             row = {"case": sid, "shape": str(d["ctp4d"].shape), **{k: bool(q.get(k, False)) for k in FLAGS},
                    "aif_peak": q.get("aif_peak"), "n_aif_voxels": q.get("n_aif_voxels"), "aif_ttp": q.get("aif_ttp"),
-                   "tissue_ttp": q.get("tissue_ttp"), "aif_second_peak": float(second_peak_fraction(res.aif.aif_raw[None])[0]),
+                   "tissue_ttp": q.get("tissue_ttp"), "aif_lead": q.get("aif_lead"), "aif_second_peak": float(second_peak_fraction(res.aif.aif_raw[None])[0]),
                    "seconds": res.qc.get("seconds")}
             pd.DataFrame([row]).to_csv(f, mode="a", header=not f.exists(), index=False)
             print(f"{sid}: peak {row['aif_peak']:.0f} HU, ttp {row['aif_ttp']:.1f}/{row['tissue_ttp']:.1f} s, "
