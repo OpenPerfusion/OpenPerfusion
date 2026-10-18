@@ -91,8 +91,12 @@ def threshold_maps(maps: PerfusionMaps, voxel_size, baseline: np.ndarray | None 
                    core_frac: float = 0.30, tmax_thr: float = 6.0,
                    vessel_cbv_max: float | None = None, vessel_cbv_rel: float = 2.5, csf_hu_max: float = 15.0,
                    reference: str = "contralateral", min_cluster_ml: float = 1.0,
-                   restrict_core_to_hypo: bool = False) -> ThresholdResult:
+                   restrict_core_to_hypo: bool = False, reliable: np.ndarray | None = None) -> ThresholdResult:
     """RAPID-style thresholding: core = rCBF < 30 %, hypoperfusion = Tmax > 6 s.
+
+    `reliable` (optional, boolean (X, Y, Z)): voxels whose curve carries enough contrast for the deconvolution
+    to be trusted; the rest are excluded from the thresholded regions and the reference region, like CSF and
+    vessels. The pipeline builds it from the enhancement-to-noise ratio (`PipelineConfig.snr_min_tissue`).
 
     rCBF reference: mean CBF of the contralateral (less hypoperfused) hemisphere, excluding
     vessels, CSF and Tmax > 6 s voxels; hemispheres are split at the mask's x-centroid.
@@ -109,6 +113,8 @@ def threshold_maps(maps: PerfusionMaps, voxel_size, baseline: np.ndarray | None 
         tissue &= maps.cbv <= vessel_cbv_rel * med
     if baseline is not None:
         tissue &= baseline >= csf_hu_max
+    if reliable is not None:
+        tissue &= reliable
     hypo_raw = tissue & (maps.tmax > tmax_thr)
 
     # ---- reference CBF ----

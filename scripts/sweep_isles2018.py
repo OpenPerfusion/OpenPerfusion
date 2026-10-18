@@ -39,7 +39,7 @@ def run_config(cases, cfg: PipelineConfig, tmax_grid=(4, 5, 6, 7, 8, 9, 10), cor
         ref = {k: d[k] for k in ("cbf", "cbv", "mtt", "tmax") if d.get(k) is not None}
         cmp = compare_to_reference(res.maps, ref, d["voxel_size"], baseline=res.baseline, lesion=d.get("lesion"),
                                    reference=cfg.reference, min_cluster_ml=cfg.min_cluster_ml,
-                                   restrict_core_to_hypo=cfg.restrict_core_to_hypo)
+                                   restrict_core_to_hypo=cfg.restrict_core_to_hypo, reliable_ours=res.reliable)
         # threshold matching: RAPID's own Tmax>6 and rCBF<30 regions vs ours at other cut-offs
         valid = res.mask & np.isfinite(ref["tmax"]) & (ref["cbf"] > 0)
         ref_maps = PerfusionMaps(cbf=ref["cbf"], cbv=ref["cbv"], mtt=ref["mtt"], tmax=ref["tmax"], ttp=res.maps.ttp,

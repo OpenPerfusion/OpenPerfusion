@@ -1,6 +1,7 @@
 # OpenPerfusion — open-source CT perfusion for acute stroke
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520559.svg)](https://doi.org/10.5281/zenodo.23520559)
+[![tests](https://github.com/OpenPerfusion/OpenPerfusion/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenPerfusion/OpenPerfusion/actions/workflows/ci.yml)
 
 **Status: research prototype (v0.4.0). Research use only. Not a medical device. Not for clinical decision-making.**
 The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; OpenPerfusion is validated against RAPID output but is not affiliated with it.
@@ -46,6 +47,17 @@ rotations and recovering them (to < 0.6 voxel and < 1°). Motion parameters are 
 about 256 pixels across and applied at full resolution; the rotation search is skipped for frames whose
 translation-only fit is already near-perfect, so a 512 × 512 × 16-slice × 50-frame export takes about 100 s.
 
+### QC verdict
+
+Every run ends with a verdict (`openperfusion.qc.qc_verdict`; `status` and `warnings` at the top of
+`summary.json`): `ok`, `review` (maps produced, but a fallback arterial input was used, the venous curve was
+truncated, the acquisition was short, the head moved more than 5 mm / 5°, or frame timing had to be assumed), or
+`reject` (no plausible arterial input: last-resort pick, peak below 15 HU, or an arterial curve that rises again
+after the bolus, as in a jog-mode artefact). On ISLES'24 the `reject` rule is the difference between a Tmax > 6 s
+ICC of 0.45 and 0.89 against icobrain cva; a deployed system should refuse a `reject` study with its warning rather
+than report through it. The same flags are recorded per case by the validation harness, so every dataset result
+below is reported with and without the flagged cases.
+
 ## Real vendor data: UniToBrain (GE LightSpeed VCT, 11 patients, two acquisition modes)
 
 The first real exports the reader saw were eleven patients of [UniToBrain](https://ieee-dataport.org/open-access/unitobrain)
@@ -74,14 +86,19 @@ their absolute CBF is about half of ours and their delay map is not the same qua
 and relative patterns are compared. On ISLES 2018 the same changes were a net gain (tables below), so none of them
 is a special case for one scanner.
 
-One caveat these cases make concrete: absolute CBF and MTT, and therefore the Tmax > 6 s volume, depend on the SVD
-truncation (on MOL-001, whole-brain median CBF 13, 20 and 32 mL/100 g/min at 10 %, 5 % and 2 % truncation; MTT
-10.6, 7.2 and 4.6 s; Tmax > 6 229, 329 and 242 mL). The 10 % default was calibrated against RAPID on 1 s ISLES data;
-shuttle and 0.5 s cine data are resampled to 1 s, which changes the singular value spectrum the truncation acts on.
-The rCBF < 30 % core is unaffected (it is relative to the contralateral hemisphere), but Tmax > 6 volumes on other
-sampling schemes should not be called RAPID-equivalent until the regularisation has been calibrated on
-RAPID-processed cases with that sampling, which is what the paired cohort is for; the ASIST phantom settles the
-absolute scale independently.
+One caveat these cases made concrete, now quantified on the phantom (`scripts/phantom_sampling.py`,
+`results/phantom_sampling/`): absolute CBF and MTT depend on the SVD truncation (on MOL-001, whole-brain median CBF
+13, 20 and 32 mL/100 g/min at 10 %, 5 % and 2 % truncation), and the 10 % default was calibrated against RAPID on
+1 s ISLES data. The phantom, acquired at 0.5, 1, 2 and 2.8 s and in two-position shuttle mode and resampled to the
+reader's 1 s grid exactly as vendor exports are, says the sampling itself is a small effect: with the 10 % default,
+CBF reads 1.00 / 0.97 / 0.93 / 0.93 of the 1 s value at 0.5 / 2 / 2.8 / shuttle sampling and Tmax shifts by at most
++0.3 s, with 99 % agreement at the 6 s boundary; 10 % remains the best truncation at every sampling, and oSVD is
+equally stable. The large swing on MOL-001 is the truncation choice itself (CBF x1.29 / x1.10 / x1.00 at 2 / 5 / 10 %
+on the phantom at any sampling, and x1.65 at 2 % once noise doubles), not the resampling. So: keep 10 %; expect
+absolute CBF to read about 5-7 % low on shuttle data; relative core is unaffected. Whether RAPID's own numbers shift
+with sampling is a question for the paired cohort.
+
+![truncation vs native sampling on the phantom](results/phantom_sampling/sampling.png)
 
 ## ISLES'24: Siemens and Philips scanners, icobrain cva as the reference (50 subjects)
 
@@ -130,10 +147,21 @@ Reading it: against a second commercial package, on two more vendors, with no tu
 about 0.9 and the 6 s boundary is the same as RAPID's and icobrain's; voxelwise overlap (Dice 0.67) is lower than
 against RAPID (0.85) because icobrain's maps are much more heavily smoothed than ours (visible in
 `results/isles24_10/montage.png`), the comparison crosses a registration, and the defaults were calibrated to RAPID.
-The widest unflagged disagreements (sub-stroke0074: 86 vs 19 mL; sub-stroke0019: 136 vs 52 mL) are over-calls on
-our side and the next thing to look at. Per-subject results with flags: `results/isles24_50/cases.csv`; the first
-32 (before the flags were recorded) remain in `results/isles24_32/`. The dataset's own difficulty is also visible in
-the follow-up-lesion overlap, which is low for both tools.
+Per-subject results with flags: `results/isles24_50/cases.csv`; the first 32 (before the flags were recorded) remain in
+`results/isles24_32/`. The dataset's own difficulty is also visible in the follow-up-lesion overlap, which is low for
+both tools.
+
+The two widest unflagged disagreements (sub-stroke0074: 86 vs 19 mL; sub-stroke0019: 136 vs 52 mL) were taken apart
+(`scripts/isles2024_inspect.py`, `results/inspect/`): in both, the extra Tmax > 6 s tissue is bilateral deep white
+matter with low CBV (0.7 x the brain median) and low enhancement, where our Tmax runs 6-8 s and icobrain's about 4 s.
+An audit of the 6 s boundary on every subject of both datasets (`scripts/tmax_tail_audit.py`, `results/audit/`)
+shows this is a difference between the references, not a fault that can be fixed against RAPID: against RAPID our
+normal-tissue Tmax tail matches (99th percentile 6.1 vs 6.0 s; we under-call more than we over-call, 4 vs 17 mL per
+case), whereas icobrain's maps are smoothed until their tail is clipped (99th percentile 5.7 vs our 8.2 s) and
+icobrain calls more hypoperfusion than we do in 38 of 48 unflagged subjects (median 53 mL only-icobrain vs 27 mL
+only-ours). A per-voxel enhancement-SNR gate that removes such tissue (`PipelineConfig.snr_min_tissue`, off by
+default) was tried and rejected: on ISLES 2018 it costs Tmax > 6 Dice 0.85 -> 0.83 and core Dice 0.77 -> 0.69 at
+2 x noise, and more at 3 x, because the low-enhancement tissue it removes is tissue RAPID also calls.
 
 ## Digital phantom
 
@@ -201,10 +229,10 @@ Per-case results: `results/split_half_v9/heldout_pooled_cases.csv`; figure: `res
 
 ## Next steps
 
-1. More vendor exports: Siemens, Philips and Canon. (GE: 11 UniToBrain patients in two acquisition modes, including one with 6 mm of motion, are done.)
+1. Raw vendor exports from Siemens, Philips and Canon (a QA-phantom scan through the clinical CTP protocol is enough to find the header quirks). GE: 11 UniToBrain patients in two acquisition modes are done.
 2. Request the ASIST-Japan phantom; reproduce the Kudo 2013 delay test.
-3. UHN paired cohort (REB) for multi-vendor, current-RAPID-version calibration.
-4. A DICOM writer for the maps (secondary capture / parametric map) for PACS push-back.
+3. UHN paired cohort (REB) for multi-vendor, current-RAPID-version calibration: the equivalence paper.
+4. Shadow-mode DICOM node beside RAPID (receive, process, write maps, never to PACS until the cohort is in).
 
 ## Layout
 
@@ -222,9 +250,12 @@ openperfusion/io_isles2024.py  ISLES'24 loader (icobrain maps registered into th
 openperfusion/register.py       rigid CTP-to-NCCT registration (SimpleITK, optional)
 openperfusion/io_dicom.py       DICOM 4D reader (+ synthetic DICOM writer for tests)
 openperfusion/motion.py         rigid in-plane motion correction
+openperfusion/qc.py             QC verdict (ok / review / reject) and warnings from the pipeline's flags
 openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`, `openperfusion dicom`
-scripts/                       ISLES sweeps and split-half validation; UniToBrain fetch and comparison; ISLES'24 fetch, run, QC, summary
-tests/                         phantom recovery, DICOM round trip, motion correction
+scripts/                       ISLES sweeps and split-half validation; UniToBrain fetch and comparison; ISLES'24 fetch, run, QC, summary,
+                               inspect; Tmax-boundary audit; phantom sampling study; run_variant for one-config harness runs
+tests/                         phantom recovery, DICOM round trip, motion correction, ISLES'24 loader + registration, QC verdict
+.github/workflows/ci.yml       pytest on Python 3.10 and 3.12 on every push
 ```
 
 ## Citing and contributing

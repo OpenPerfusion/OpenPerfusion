@@ -79,7 +79,7 @@ def _corr(a, b):
 
 
 def compare_to_reference(ours: PerfusionMaps, ref: dict, voxel_size, baseline=None, lesion: np.ndarray | None = None,
-                         tmax_thr: float = 6.0, core_frac: float = 0.30, **thr_kw) -> dict:
+                         tmax_thr: float = 6.0, core_frac: float = 0.30, reliable_ours: np.ndarray | None = None, **thr_kw) -> dict:
     """Compare our maps with reference maps (dict with any of cbf, cbv, mtt, tmax; same grid).
 
     Thresholded regions for the reference are derived from the reference maps with the SAME
@@ -101,7 +101,9 @@ def compare_to_reference(ours: PerfusionMaps, ref: dict, voxel_size, baseline=No
                              tmax=ref.get("tmax", ours.tmax), ttp=ours.ttp, mask=valid, dt=ours.dt, method="reference")
     ours_v = PerfusionMaps(cbf=ours.cbf, cbv=ours.cbv, mtt=ours.mtt, tmax=ours.tmax, ttp=ours.ttp, mask=valid,
                            dt=ours.dt, method=ours.method)
-    t_ours = threshold_maps(ours_v, voxel_size, baseline=baseline, core_frac=core_frac, tmax_thr=tmax_thr, **thr_kw)
+    # the reliability gate is part of OUR pipeline; the reference package applied its own rules, so it is
+    # thresholded as delivered
+    t_ours = threshold_maps(ours_v, voxel_size, baseline=baseline, core_frac=core_frac, tmax_thr=tmax_thr, reliable=reliable_ours, **thr_kw)
     t_ref = threshold_maps(ref_maps, voxel_size, baseline=baseline, core_frac=core_frac, tmax_thr=tmax_thr, **thr_kw)
     out.update(
         core_ml_ours=t_ours.core_ml, core_ml_ref=t_ref.core_ml, dice_core=dice(t_ours.core, t_ref.core),

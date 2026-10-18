@@ -42,10 +42,14 @@ class PipelineConfig:
     reference: str = "contralateral"
     min_cluster_ml: float = 1.0
     restrict_core_to_hypo: bool = False
+    # per-voxel reliability: a voxel enters the thresholded regions only if its (smoothed) peak enhancement is at
+    # least this many times its pre-bolus noise SD; 0 disables the gate
+    snr_min_tissue: float = 0.0
 
 
 @dataclass
 class PipelineResult:
+    """`reliable`: per-voxel reliability mask from the enhancement-SNR gate (None when the gate is off)."""
     mask: np.ndarray
     baseline: np.ndarray
     n_baseline: int
@@ -53,6 +57,7 @@ class PipelineResult:
     maps: PerfusionMaps
     thresholds: ThresholdResult
     qc: dict = field(default_factory=dict)
+    reliable: np.ndarray | None = None
 
 
 def run_pipeline(hu4d: np.ndarray, dt: float, voxel_size, config: PipelineConfig | None = None,
@@ -77,10 +82,14 @@ def run_pipeline(hu4d: np.ndarray, dt: float, voxel_size, config: PipelineConfig
                                        temporal_sigma=cfg.temporal_sigma)
     kw = {"bcsvd": dict(lam=cfg.lam), "osvd": dict(oi_threshold=cfg.oi_threshold), "fourier": dict(pr=cfg.pr)}[cfg.method]
     maps = perfusion_maps(conc, mask, aif.aif, dt, method=cfg.method, **kw)
+    reliable = None
+    if cfg.snr_min_tissue > 0:
+        noise = conc[..., :n_base].std(axis=-1)
+        reliable = conc.max(axis=-1) >= cfg.snr_min_tissue * np.maximum(noise, 0.5)
     thr = threshold_maps(maps, voxel_size, baseline=baseline, core_frac=cfg.core_frac, tmax_thr=cfg.tmax_thr,
                          vessel_cbv_max=cfg.vessel_cbv_max, vessel_cbv_rel=cfg.vessel_cbv_rel, csf_hu_max=cfg.csf_hu_max, reference=cfg.reference,
-                         min_cluster_ml=cfg.min_cluster_ml, restrict_core_to_hypo=cfg.restrict_core_to_hypo)
+                         min_cluster_ml=cfg.min_cluster_ml, restrict_core_to_hypo=cfg.restrict_core_to_hypo, reliable=reliable)
     qc = {"seconds": round(time.time() - t0, 2), "n_baseline_frames": n_base, "n_frames": hu4d.shape[-1],
           "dt": dt, "n_mask_voxels": int(mask.sum()), **{f"aif_{k}": v for k, v in aif.qc.items()}, **maps.qc,
           "config": asdict(cfg)}
-    return PipelineResult(mask=mask, baseline=baseline, n_baseline=n_base, aif=aif, maps=maps, thresholds=thr, qc=qc)
+    return PipelineResult(mask=mask, baseline=baseline, n_baseline=n_base, aif=aif, maps=maps, thresholds=thr, qc=qc, reliable=reliable)

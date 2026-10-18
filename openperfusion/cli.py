@@ -98,7 +98,7 @@ def cmd_dicom(a):
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     c = read_ctp_dicom(a.directory, dt=a.dt)
     print(f"loaded {c.n_files} images: {c.hu.shape} voxel {tuple(round(v, 2) for v in c.voxel_size)} dt {c.dt}s shuttle={c.meta['shuttle_mode']}")
-    hu = c.hu
+    hu = c.hu; mr = None
     if a.motion:
         from .motion import motion_correct
         mr = motion_correct(hu, voxel_size=c.voxel_size)
@@ -111,12 +111,15 @@ def cmd_dicom(a):
         save_nifti(getattr(res.maps, k), aff, out / f"{k}.nii.gz")
     save_nifti(t.core.astype(np.uint8), aff, out / "core_rcbf30.nii.gz")
     save_nifti(t.hypo.astype(np.uint8), aff, out / "hypoperfusion_tmax6.nii.gz")
-    summary = {"core_ml": t.core_ml, "hypoperfusion_ml": t.hypo_ml, "mismatch_ml": t.mismatch_ml, "mismatch_ratio": t.mismatch_ratio,
-               "tmax_ml": t.tmax_ml, "hir": t.hir, "defuse3_target_profile": t.defuse3_target, "qc": res.qc, "dicom": c.meta}
+    from .qc import qc_verdict
+    verdict = qc_verdict(res, meta=c.meta, motion=mr)
+    summary = {"status": verdict["status"], "warnings": verdict["warnings"],
+               "core_ml": t.core_ml, "hypoperfusion_ml": t.hypo_ml, "mismatch_ml": t.mismatch_ml, "mismatch_ratio": t.mismatch_ratio,
+               "tmax_ml": t.tmax_ml, "hir": t.hir, "defuse3_target_profile": t.defuse3_target, "qc": {**res.qc, **verdict}, "dicom": c.meta}
     (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
     print(json.dumps({k: v for k, v in summary.items() if k not in ("qc", "dicom")}, indent=2, default=str))
-    if res.aif.qc.get("aif_weak"):
-        print("WARNING: weak arterial input function — maps unreliable; check the AIF location")
+    for w in verdict["warnings"]:
+        print(f"{verdict['status'].upper()}: {w}")
 
 
 def main(argv=None):
