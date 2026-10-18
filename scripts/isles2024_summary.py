@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 OpenPerfusion contributors
-"""Summarise an ISLES'24 run two ways: all subjects, and excluding those the pipeline itself flagged
-(AIF fallback or last resort). Both numbers belong in any report; the gap between them is the case for
-honouring the flags.
+"""Summarise an ISLES'24 run three ways: all subjects; excluding those the pipeline itself flagged (AIF fallback
+or last resort); and additionally excluding subjects whose reference maps do not sit on their own NCCT grid
+(`scripts/isles2024_refcheck.py`: in-plane shift > 10 mm or Dice < 0.75 against the NCCT brain, which is
+sub-stroke0026 alone in the 149). All three belong in any report; the gap between the first two is the case for
+honouring the flags, and the third is the comparison that is actually valid voxel by voxel.
 
-    python scripts/isles2024_summary.py results/isles24_50            # reads cases.csv (+ qc.csv if present)
+    python scripts/isles2024_summary.py results/isles24_149           # reads cases.csv (+ qc.csv, refcheck.csv if present)
 
 `qc.csv` (from `scripts/isles2024_qc.py`) carries the per-subject AIF flags; without it, nothing is excluded.
 """
@@ -17,6 +19,7 @@ from openperfusion.validate import summarize_cases
 
 FLAGS = ("aif_fallback", "aif_last_resort")          # the `reject`-class flags
 REVIEW_LEAD = 8.0                                       # `review`: arterial input peaking this far ahead of the tissue
+REF_SHIFT_MM, REF_DICE = 10.0, 0.75                     # reference misaligned with its own NCCT (refcheck.csv)
 
 
 def block(df: pd.DataFrame) -> dict:
@@ -53,17 +56,28 @@ def main(d: Path):
             cases.to_csv(d / "cases.csv", index=False)
     else:
         review = []
+    misaligned = []
+    if (d / "refcheck.csv").exists():
+        rc = pd.read_csv(d / "refcheck.csv").drop_duplicates("case")
+        bad = (rc.get("ref_inplane_shift_mm", pd.Series(0, index=rc.index)).fillna(0) > REF_SHIFT_MM) | (rc.get("ref_inplane_dice", pd.Series(1, index=rc.index)).fillna(1) < REF_DICE)
+        misaligned = sorted(rc.loc[bad, "case"].tolist())
+        new_cols = [c for c in rc.columns if c != "case" and c not in cases.columns]
+        if new_cols:
+            cases = cases.merge(rc[["case", *new_cols]], on="case", how="left")
+            cases.to_csv(d / "cases.csv", index=False)
     kept = cases[~cases.case.isin(flagged)]
     summ = {"all": block(cases), "excluding_flagged": block(kept), "excluding_flagged_and_review": block(kept[~kept.case.isin(review)]),
-            "flagged": flagged, "review": review, "flag_rule": " or ".join(FLAGS), "review_rule": f"aif_lead >= {REVIEW_LEAD}"}
+            "excluding_flagged_and_misaligned_reference": block(kept[~kept.case.isin(misaligned)]),
+            "flagged": flagged, "review": review, "misaligned_reference": misaligned, "flag_rule": " or ".join(FLAGS), "review_rule": f"aif_lead >= {REVIEW_LEAD}",
+            "misaligned_rule": f"ref_inplane_shift_mm > {REF_SHIFT_MM} or ref_inplane_dice < {REF_DICE}"}
     json.dump(summ, open(d / "summary.json", "w"), indent=1, default=float)
-    for name in ("all", "excluding_flagged", "excluding_flagged_and_review"):
+    for name in ("all", "excluding_flagged", "excluding_flagged_and_review", "excluding_flagged_and_misaligned_reference"):
         b = summ[name]
-        print(f"{name:18s} n={b['n']:3d}  Tmax>6: ICC {b['hypo_icc']:.2f} bias {b['hypo_bias']:+.1f} LoA {b['hypo_loa'][0]:.0f}/{b['hypo_loa'][1]:+.0f} "
+        print(f"{name:42s} n={b['n']:3d}  Tmax>6: ICC {b['hypo_icc']:.2f} bias {b['hypo_bias']:+.1f} LoA {b['hypo_loa'][0]:.0f}/{b['hypo_loa'][1]:+.0f} "
               f"Dice {b['hypo_dice_mean']:.2f} ({b['hypo_dice_median']:.2f})  core: ICC {b['core_icc']:.2f} bias {b['core_bias']:+.1f} "
               f"LoA {b['core_loa'][0]:.0f}/{b['core_loa'][1]:+.0f} Dice {b['core_dice_mean']:.2f}  r {b['r_cbf']:.2f}/{b['r_cbv']:.2f}/{b['r_tmax']:.2f}  "
               f"DEFUSE-3 {b['defuse3_agreement']:.2f}")
-    print("flagged:", flagged, "| review:", review)
+    print("flagged:", flagged, "| review:", review, "| misaligned reference:", misaligned)
 
 
 if __name__ == "__main__":

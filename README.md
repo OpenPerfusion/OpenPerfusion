@@ -201,6 +201,23 @@ hypoperfusion than we do in most subjects, so voxel overlap against it (Dice 0.6
 (0.85) for reasons that are not ours to fix. An enhancement-SNR gate (`PipelineConfig.snr_min_tissue`, off) was
 tried for that and rejected on ISLES 2018.
 
+### One subject's reference maps are not on their own grid
+
+sub-stroke0026 agrees with icobrain at voxelwise r = 0.04 for CBF, CBV and Tmax alike, although the CTP registers
+to its NCCT cleanly (skull edges coincide, both initialisations converge to the same transform). The fault is in
+the reference: in native NCCT space icobrain's maps are displaced from the NCCT by about 19 mm in-plane, their
+outline is a tilted box that misses a third of the brain, and the map reads a lower CBF in grey matter than in
+white matter (`results/inspect/sub-stroke0026/reference_alignment.png`). `scripts/isles2024_refcheck.py` scores
+this for every subject from the NCCT and the icobrain CBF alone (slice-wise Dice and centroid offset between the
+map and the NCCT brain mask over the slab the map covers, a few seconds per shard, `results/isles24_149/refcheck.csv`):
+aligned subjects sit at Dice 0.90-0.94 and 1-5 mm, sub-stroke0026 at 0.70 and 18.7 mm, nothing else below
+0.79 or above 9.4 mm. `scripts/isles2024_summary.py` reports a fourth stratum without it (n = 145: Tmax > 6
+ICC 0.87, bias +6 mL, LoA -62/+74, Dice 0.69; core ICC 0.91), which differs from the n = 146 figures only in the
+second decimal; the point is that a reference's own alignment is something to check before a voxelwise comparison,
+and that the pipeline's own flags are not the only reason to set a subject aside. The other low-correlation
+subjects (sub-stroke0079 r = 0.19, 0010 and 0037 at 0.34, 0040 at 0.40) pass the check; 0040 is a 16-slice, 10 mm
+acquisition against 0.8 mm NCCT slices, and the rest are still to be looked at.
+
 ## Digital phantom
 
 `openperfusion.phantom.make_phantom()` builds a Kudo-style phantom: a 7 × 7 grid of tiles spanning CBF 10–70 mL/100 g/min × MTT 4–16 s, one slice per tracer delay (0–3 s), exponential or box residue functions, an arterial block (partial-volumed to 70 %), a venous block (delayed, dispersed, same area), normal reference tissue (CBF 50 / MTT 4), a CSF block, skull and air. Curves are generated on a 0.05 s grid and sampled at 1 s, so the estimator sees realistic discretisation error. Noise is Gaussian in HU.
