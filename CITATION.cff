@@ -24,12 +24,15 @@ keywords:
   - ischemic core
   - RAPID
   - ISLES 2018
+  - ISLES 2024
+  - icobrain
 abstract: >-
   An open-source, delay-insensitive CT perfusion pipeline (block-circulant SVD /
   oSVD / Fourier-Wiener deconvolution, automatic AIF/VOF selection, rCBF < 30 %
   core and Tmax > 6 s hypoperfusion volumes, mismatch and DEFUSE-3 target
-  profile) validated against RAPID output on the 94 ISLES 2018 training scans.
-  Research use only; not a medical device.
+  profile, QC verdict, shadow-mode DICOM node) validated against RAPID output on
+  the 94 ISLES 2018 training scans and against icobrain cva on the 149 ISLES'24
+  subjects. Research use only; not a medical device.
 references:
   - type: article
     title: "Tracer arrival timing-insensitive technique for estimating flow in MR perfusion-weighted imaging using singular value decomposition with a block-circulant deconvolution matrix"
@@ -99,3 +102,53 @@ references:
     end: 2337
     year: 2021
     doi: 10.1161/STROKEAHA.120.030696
+  - type: article
+    title: "The Ischemic Stroke Lesion Segmentation Challenge (ISLES)'24 Dataset: A Multimodal Stroke Imaging Dataset with Hyperacute CT, Acute Postinterventional MRI, and 3-month Clinical Outcomes"
+    authors:
+      - family-names: Riedel
+        given-names: Evamaria Olga
+      - family-names: de la Rosa
+        given-names: Ezequiel
+      - family-names: Baran
+        given-names: The Anh
+      - family-names: Hernandez Petzsche
+        given-names: Moritz
+      - family-names: Baazaoui
+        given-names: Hakim
+      - family-names: Yang
+        given-names: Kaiyuan
+      - family-names: Musio
+        given-names: Fabio Antonio
+      - family-names: Huang
+        given-names: Houjing
+      - family-names: Robben
+        given-names: David
+      - family-names: Seia
+        given-names: Joaquin Oscar
+      - family-names: Wiest
+        given-names: Roland
+      - family-names: Reyes
+        given-names: Mauricio
+      - family-names: Su
+        given-names: Ruisheng
+      - family-names: Zimmer
+        given-names: Claus
+      - family-names: Boeckh-Behrens
+        given-names: Tobias
+      - family-names: Berndt
+        given-names: Maria
+      - family-names: Menze
+        given-names: Bjoern
+      - family-names: Rueckert
+        given-names: Daniel
+      - family-names: Wiestler
+        given-names: Benedikt
+      - family-names: Wegener
+        given-names: Susanne
+      - family-names: Kirschke
+        given-names: Jan Stefan
+    journal: "Radiology: Artificial Intelligence"
+    volume: 8
+    issue: 3
+    year: 2026
+    doi: 10.1148/ryai.250603
