@@ -215,8 +215,13 @@ aligned subjects sit at Dice 0.90-0.94 and 1-5 mm, sub-stroke0026 at 0.70 and 18
 ICC 0.87, bias +6 mL, LoA -62/+74, Dice 0.69; core ICC 0.91), which differs from the n = 146 figures only in the
 second decimal; the point is that a reference's own alignment is something to check before a voxelwise comparison,
 and that the pipeline's own flags are not the only reason to set a subject aside. The other low-correlation
-subjects (sub-stroke0079 r = 0.19, 0010 and 0037 at 0.34, 0040 at 0.40) pass the check; 0040 is a 16-slice, 10 mm
-acquisition against 0.8 mm NCCT slices, and the rest are still to be looked at.
+subjects (sub-stroke0079 r = 0.19, 0010 and 0037 at 0.34, 0040 at 0.40) pass the check. sub-stroke0079 is a
+disagreement about the tissue, not the grid: the registration is right (the head is turned 21 degrees between the
+two scans and the skull edges coincide after it, `results/inspect/sub-stroke0079/registration.png`), and icobrain
+calls 195 mL of Tmax > 6 s in tissue whose mean curve is indistinguishable from the normal-tissue curve (same
+arrival, same 24 s peak, `results/inspect/sub-stroke0079/inspect.png`); the follow-up infarct is 4.6 mL. Our 79 mL
+is the call the raw curves support. 0040 is a 16-slice, 10 mm acquisition against 0.8 mm NCCT slices (no rigid
+registration can do better than NCC 0.15 there); 0010 and 0037 are still to be looked at.
 
 ## Digital phantom
 
