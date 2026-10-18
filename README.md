@@ -23,12 +23,13 @@ The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; Open
 
 ```bash
 git clone https://github.com/OpenPerfusion/OpenPerfusion.git && cd OpenPerfusion
-pip install -e ".[dicom,dev]"   # numpy, scipy, nibabel, scikit-image, pydicom, pytest (pandas, matplotlib for the scripts)
+pip install -e ".[dicom,register,node,dev]"   # pydicom + JPEG codecs, SimpleITK, pynetdicom + pillow, pytest + pyarrow
 pytest tests                # phantom recovery, DICOM round trip, motion correction (~15 s)
 
 openperfusion phantom --out results/phantom                 # digital phantom → CSV, JSON, PNG
 openperfusion isles2018 /path/to/ISLES2018/TRAINING --figures --out results/isles2018
 openperfusion dicom /path/to/ctp_dicom_dir --motion --out results/case   # vendor export → NIfTI maps + summary.json
+openperfusion serve --out /data/openperfusion --motion --push-to orthanc:4242:ORTHANC   # shadow-mode DICOM node
 ```
 
 Defaults are the configuration validated against RAPID on ISLES 2018: block-circulant SVD with 10 % truncation,
@@ -50,13 +51,35 @@ translation-only fit is already near-perfect, so a 512 × 512 × 16-slice × 50-
 ### QC verdict
 
 Every run ends with a verdict (`openperfusion.qc.qc_verdict`; `status` and `warnings` at the top of
-`summary.json`): `ok`, `review` (maps produced, but a fallback arterial input was used, the venous curve was
-truncated, the acquisition was short, the head moved more than 5 mm / 5°, or frame timing had to be assumed), or
+`summary.json`): `ok`, `review` (maps produced, but a fallback arterial input was used, the acquisition was short,
+the head moved more than 5 mm / 5°, or frame timing had to be assumed; a truncated or missing venous curve is
+reported but does not change the verdict, since it only switches off the partial-volume correction), or
 `reject` (no plausible arterial input: last-resort pick, peak below 15 HU, or an arterial curve that rises again
 after the bolus, as in a jog-mode artefact). On ISLES'24 the `reject` rule is the difference between a Tmax > 6 s
 ICC of 0.45 and 0.89 against icobrain cva; a deployed system should refuse a `reject` study with its warning rather
 than report through it. The same flags are recorded per case by the validation harness, so every dataset result
 below is reported with and without the flagged cases.
+
+### Shadow-mode DICOM node
+
+`openperfusion serve` is a DICOM Storage SCP (pynetdicom) that accepts any storage SOP class in any transfer
+syntax, files instances under `incoming/<study>/<series>/`, and processes a series once it has been quiet for
+30 s and holds at least 60 images (anything smaller is a scout or a plain CT and goes to `skipped/` with the
+reason). Processing is the same chain as `openperfusion dicom` (`--motion` optional) plus the QC verdict, and the
+output is NIfTI maps, `summary.json`, and DICOM Secondary Capture series (`openperfusion/dicom_out.py`): CBF, CBV,
+MTT and Tmax as colour maps, the core / Tmax > 6 s regions as an overlay, and a text panel with the volumes and the
+QC warnings, all filed under the source StudyInstanceUID with series numbers 9001-9009 and "research" in every
+series description. With `--push-to HOST:PORT:AET` the DICOM results are C-STOREd to a destination; `reject`
+studies are not pushed. `deploy/docker-compose.yml` runs a research Orthanc beside the node: Orthanc receives a
+copy of each CTP study (a second destination on the scanner, or a PACS forwarding rule), a Lua rule forwards CT
+series with 60+ images to the node, and the node pushes its maps back so both can be read in Orthanc's viewer.
+Nothing in that setup talks to the clinical PACS; that is what shadow mode means here.
+
+Tested end to end: a phantom series C-STOREd to the node, processed, written as 5 × Z + 1 DICOM objects under
+the source study and pushed to a second SCP (`tests/test_node.py`), and a real GE cine export (UniToBrain
+MOL-005: 712 JPEG-lossless files) received in 9 s and processed with motion correction in 79 s. The compose file
+itself has not been run here (no Docker daemon in the development environment); it is standard Orthanc
+configuration and the first thing to check on a real deployment.
 
 ## Real vendor data: UniToBrain (GE LightSpeed VCT, 11 patients, two acquisition modes)
 
@@ -231,7 +254,7 @@ Per-case results: `results/split_half_v9/heldout_pooled_cases.csv`; figure: `res
 
 1. Raw vendor exports from Siemens, Philips and Canon (a QA-phantom scan through the clinical CTP protocol is enough to find the header quirks). GE: 11 UniToBrain patients in two acquisition modes are done.
 2. Request the ASIST-Japan phantom; reproduce the Kudo 2013 delay test.
-3. UHN paired cohort (REB) for multi-vendor, current-RAPID-version calibration: the equivalence paper.
+3. UHN paired cohort (REB) for multi-vendor, current-RAPID-version calibration: the equivalence paper. The analysis is pre-specified and frozen as `scripts/cohort_compare.py` (manifest in, per-case table + summary + figure out, three QC strata, bootstrap CIs).
 4. Shadow-mode DICOM node beside RAPID (receive, process, write maps, never to PACS until the cohort is in).
 
 ## Layout
@@ -251,10 +274,14 @@ openperfusion/register.py       rigid CTP-to-NCCT registration (SimpleITK, optio
 openperfusion/io_dicom.py       DICOM 4D reader (+ synthetic DICOM writer for tests)
 openperfusion/motion.py         rigid in-plane motion correction
 openperfusion/qc.py             QC verdict (ok / review / reject) and warnings from the pipeline's flags
+openperfusion/dicom_out.py      DICOM Secondary Capture output (maps, regions, summary panel)
+openperfusion/node.py           shadow-mode DICOM node (`openperfusion serve`)
+deploy/                         docker-compose with a research Orthanc + forwarding rule, Dockerfile
 openperfusion/cli.py           `openperfusion phantom`, `openperfusion isles2018`, `openperfusion dicom`
 scripts/                       ISLES sweeps and split-half validation; UniToBrain fetch and comparison; ISLES'24 fetch, run, QC, summary,
-                               inspect; Tmax-boundary audit; phantom sampling study; run_variant for one-config harness runs
-tests/                         phantom recovery, DICOM round trip, motion correction, ISLES'24 loader + registration, QC verdict
+                               inspect; Tmax-boundary audit; phantom sampling study; run_variant for one-config harness runs;
+                               cohort_compare: the frozen, pre-specified analysis for the paired RAPID cohort
+tests/                         phantom recovery, DICOM round trip, motion correction, ISLES'24 loader + registration, QC verdict, node end to end
 .github/workflows/ci.yml       pytest on Python 3.10 and 3.12 on every push
 ```
 

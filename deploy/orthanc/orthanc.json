@@ -1,0 +1,18 @@
+{
+  "Name": "OpenPerfusion research Orthanc",
+  "DicomAet": "ORTHANC",
+  "DicomPort": 4242,
+  "HttpPort": 8042,
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": true,
+  "RegisteredUsers": { "orthanc": "orthanc" },
+  "DicomCheckCalledAet": false,
+  "DicomAlwaysAllowStore": true,
+  "StableAge": 30,
+  "DicomModalities": {
+    "openperfusion": ["OPENPERF", "openperfusion", 11112]
+  },
+  "LuaScripts": ["/etc/orthanc/forward_ctp.lua"],
+  "StorageDirectory": "/var/lib/orthanc/db",
+  "IndexDirectory": "/var/lib/orthanc/db"
+}

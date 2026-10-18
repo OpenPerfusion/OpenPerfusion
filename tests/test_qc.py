@@ -24,10 +24,13 @@ def test_clean_phantom_ok(res):
 
 def test_flags_drive_verdict(res):
     r = copy.copy(res); r.aif = copy.copy(res.aif); r.aif.qc = dict(res.aif.qc)
+    r.aif.qc["truncated"] = True; r.aif.qc["vof_tail_fraction"] = 0.4
+    assert qc_verdict(r)["status"] == "ok" and len(qc_verdict(r)["warnings"]) == 1
+    r.aif.qc["truncated"] = False
     r.aif.qc["aif_fallback"] = True
     assert qc_verdict(r)["status"] == "review"
     r.aif.qc["truncated"] = True; r.aif.qc["vof_tail_fraction"] = 0.4
-    v = qc_verdict(r); assert v["status"] == "review" and len(v["warnings"]) == 2
+    v = qc_verdict(r); assert v["status"] == "review" and len(v["warnings"]) == 2     # truncation warns, does not escalate
     r.aif.qc["aif_last_resort"] = True
     assert qc_verdict(r)["status"] == "reject"
 

@@ -7,6 +7,7 @@ Three verdicts:
 
     ok      - nothing to report
     review  - the maps were produced but something about the study deserves a look before they are trusted
+              (fallback arterial input, short acquisition, large motion, assumed frame timing)
     reject  - the pipeline could not find a usable arterial input; the maps should not be reported
 
 On ISLES'24 the one subject the `reject` rule catches (sub-stroke0028, a slab-wide periodic artefact) is the
@@ -41,11 +42,13 @@ def qc_verdict(res, meta: dict | None = None, motion=None, max_second_peak: floa
     elif q.get("aif_fallback"):
         warnings.append(f"the primary arterial search failed its plausibility checks; a fallback curve ({aif_peak:.0f} HU) was used. "
                         "Check the AIF location before trusting the maps."); raise_to("review")
+    # the two venous conditions only switch off the partial-volume correction: absolute CBF/CBV move, the relative
+    # core and Tmax volumes do not, so they are reported but do not change the verdict
     if q.get("truncated"):
         warnings.append(f"venous curve truncated (tail {q.get('vof_tail_fraction', float('nan')):.0%} of peak at the last frame): "
-                        "partial-volume correction skipped; absolute CBF/CBV scale uncertain, relative core (rCBF) unaffected."); raise_to("review")
+                        "partial-volume correction skipped; absolute CBF/CBV scale uncertain, relative core (rCBF) and Tmax unaffected.")
     if q.get("vof") == "no late-arriving candidates":
-        warnings.append("no venous output function found; partial-volume correction skipped."); raise_to("review")
+        warnings.append("no venous output function found; partial-volume correction skipped; absolute CBF/CBV scale uncertain.")
     n_frames = res.qc.get("n_frames"); dt = res.qc.get("dt")
     if n_frames and dt and n_frames * dt < 40:
         warnings.append(f"short acquisition ({n_frames * dt:.0f} s); late Tmax values may be truncated."); raise_to("review")

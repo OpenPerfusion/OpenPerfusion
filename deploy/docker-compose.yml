@@ -1,0 +1,29 @@
+# Shadow-mode deployment: a research Orthanc receives a copy of each CT perfusion study (from the scanner's second
+# destination or a PACS forwarding rule), forwards perfusion series to the OpenPerfusion node, and receives the
+# node's DICOM results back so they can be viewed beside the source study in Orthanc's own viewer.
+# Nothing here talks to the clinical PACS. Research use only.
+#
+#   docker compose up -d
+#   Orthanc web UI: http://localhost:8042  (orthanc / orthanc)   DICOM: port 4242, AE title ORTHANC
+#   OpenPerfusion node: port 11112, AE title OPENPERF; results also on disk under ./data/openperfusion/results
+
+services:
+  orthanc:
+    image: orthancteam/orthanc:24.10.1
+    ports: ["4242:4242", "8042:8042"]
+    volumes:
+      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./orthanc/forward_ctp.lua:/etc/orthanc/forward_ctp.lua:ro
+      - ./data/orthanc:/var/lib/orthanc/db
+    restart: unless-stopped
+
+  openperfusion:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["openperfusion", "serve", "--out", "/data", "--aet", "OPENPERF", "--port", "11112", "--motion", "--push-to", "orthanc:4242:ORTHANC"]
+    ports: ["11112:11112"]
+    volumes:
+      - ./data/openperfusion:/data
+    depends_on: [orthanc]
+    restart: unless-stopped

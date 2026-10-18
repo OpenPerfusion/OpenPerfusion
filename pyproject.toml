@@ -28,6 +28,7 @@ Discussions = "https://github.com/OpenPerfusion/OpenPerfusion/discussions"
 [project.optional-dependencies]
 dicom = ["pydicom>=2.4", "pylibjpeg", "pylibjpeg-libjpeg"]
 register = ["SimpleITK>=2.3"]
+node = ["pynetdicom>=2.0", "pillow>=10"]
 dev = ["pytest>=7", "pyarrow>=14"]
 
 [project.scripts]
