@@ -163,7 +163,11 @@ the single-bolus test and the result is 712 mL of Tmax > 6 against icobrain's 77
 and a 41 HU fallback was used; its volumes agree anyway (97 vs 153 mL), but the flag is about the evidence. Three
 cases are the difference between the two columns for Tmax > 6, which is the argument for honouring the QC flags: a
 deployed system refuses them with the warning rather than reporting through them. Per-subject results with flags:
-`results/isles24_149/cases.csv`.
+`results/isles24_149/cases.csv`; bootstrap 95 % CIs (2,000 case-level resamples, `results/isles24_149/summary_ci.json`): excluding the
+flagged, Tmax > 6 ICC 0.87 (0.82-0.92), core ICC 0.91 (0.81-0.96), DEFUSE-3 agreement 0.94 (0.90-0.97), kappa 0.72
+(0.52-0.88). Against this reference the Tmax > 6 agreement does not reach the paper's pre-specified margin for RAPID
+(ICC >= 0.90 with lower CI >= 0.85), and it should not be read as if it did: icobrain is a different, more heavily
+smoothed reference, and the equivalence claim is against RAPID.
 
 ### What the second 99 subjects taught the arterial selector
 
