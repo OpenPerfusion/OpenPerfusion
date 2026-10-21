@@ -1,9 +1,13 @@
 # OpenPerfusion — open-source CT perfusion for acute stroke
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520559.svg)](https://doi.org/10.5281/zenodo.23520559)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520558.svg)](https://doi.org/10.5281/zenodo.23520558)
 [![tests](https://github.com/OpenPerfusion/OpenPerfusion/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenPerfusion/OpenPerfusion/actions/workflows/ci.yml)
 
-**Status: research prototype (v0.4.0). Research use only. Not a medical device. Not for clinical decision-making.**
+**Status: research prototype (v0.4.1). Research use only. Not a medical device. Not for clinical decision-making.**
+Releases are archived on Zenodo (concept DOI 10.5281/zenodo.23520558, which always resolves to the latest). Note on
+v0.4.0: its Zenodo record (10.5281/zenodo.23520559) was minted from commit b78a6c1, the 50-subject ISLES'24 state,
+before the QC verdict, the shadow-mode node, the arterial-selector rules and the 149-subject results reached GitHub;
+v0.4.1 is the first release that contains what this README describes.
 The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; OpenPerfusion is validated against RAPID output but is not affiliated with it.
 
 ## What it does
