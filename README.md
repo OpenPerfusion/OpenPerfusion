@@ -1,6 +1,8 @@
 # OpenPerfusion — open-source CT perfusion for acute stroke
 
-**Status: research prototype (v0.3.0). Research use only. Not a medical device. Not for clinical decision-making.**
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520559.svg)](https://doi.org/10.5281/zenodo.23520559)
+
+**Status: research prototype (v0.4.0). Research use only. Not a medical device. Not for clinical decision-making.**
 The name is free on PyPI. "RAPID" is a registered trademark of iSchemaView; OpenPerfusion is validated against RAPID output but is not affiliated with it.
 
 ## What it does
