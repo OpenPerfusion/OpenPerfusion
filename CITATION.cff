@@ -2,8 +2,13 @@ cff-version: 1.2.0
 message: "If you use OpenPerfusion in research, please cite it as below."
 title: "OpenPerfusion: open-source CT perfusion processing for acute stroke"
 type: software
-version: 0.3.0
-date-released: 2026-10-02
+version: 0.4.0
+date-released: 2026-10-21
+doi: 10.5281/zenodo.23520559
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23520558
+    description: "DOI for all versions; resolves to the latest version"
 license: Apache-2.0
 repository-code: "https://github.com/OpenPerfusion/OpenPerfusion"
 url: "https://github.com/OpenPerfusion/OpenPerfusion"
