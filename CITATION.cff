@@ -12,6 +12,9 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.23520559
     description: "v0.4.0 (commit b78a6c1): the 50-subject ISLES'24 release, tagged before the v0.4.1 changes reached GitHub"
+  - type: doi
+    value: 10.5281/zenodo.23523946
+    description: "v0.4.1 (commit 404a89b)"
 license: Apache-2.0
 repository-code: "https://github.com/OpenPerfusion/OpenPerfusion"
 url: "https://github.com/OpenPerfusion/OpenPerfusion"
